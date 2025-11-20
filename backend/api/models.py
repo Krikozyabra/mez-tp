@@ -8,7 +8,7 @@ class AssemblyShop(models.Model):
     name = models.CharField(max_length=255, verbose_name="Название цеха")
     
     def __str__(self):
-        return self.name
+        return str(self.name)
     
     class Meta:
         verbose_name = "Сборочный цех"
@@ -20,7 +20,7 @@ class Executor(models.Model):
     assembly_shops = models.ManyToManyField(AssemblyShop, verbose_name="Рабочие цехи")
     
     def __str__(self):
-        return self.full_name
+        return str(self.full_name)
     
     class Meta:
         verbose_name = "Исполнитель"
@@ -29,25 +29,17 @@ class Executor(models.Model):
 class Order(models.Model):
     name = models.CharField(max_length=255, verbose_name="Название заказа")
     description = models.TextField(verbose_name="Описание/Чертеж")
-    priority = models.IntegerField(verbose_name="Приоритет среди заказов")
     created_by = models.ForeignKey(User, on_delete=models.CASCADE, verbose_name="Создатель")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Дата обновления")
     
-    def clean(self):
-        if self.priority < 1:
-            raise ValidationError("Приоритет должен быть положительным числом")
-    
     def __str__(self):
-        return f"{self.name} (Приоритет: {self.priority})"
+        return f"{self.name}"
     
     class Meta:
         verbose_name = "Заказ"
         verbose_name_plural = "Заказы"
-        ordering = ['priority', 'created_at']
-        indexes = [
-            models.Index(fields=['priority', 'created_at']),
-        ]
+        ordering = ['created_at']
 
 class Operation(models.Model):
     order = models.ForeignKey(Order, on_delete=models.CASCADE, verbose_name="Заказ", related_name='operations')
@@ -57,7 +49,7 @@ class Operation(models.Model):
     name = models.CharField(max_length=255, verbose_name="Название операции", default="Операция")
     description = models.TextField(verbose_name="Описание операции", blank=True, null=True)
     
-    priority = models.IntegerField(verbose_name="Приоритет в заказе")
+    priority = models.IntegerField(verbose_name="Приоритет в сборочном цехе")
 
     planned_start = models.DateTimeField(verbose_name="Плановая дата начала")
     planned_end = models.DateTimeField(verbose_name="Плановая дата окончания")
@@ -121,7 +113,7 @@ class Operation(models.Model):
     class Meta:
         verbose_name = "Операция"
         verbose_name_plural = "Операции"
-        ordering = ['order__priority', 'priority']
+        ordering = ['priority']
         indexes = [
             models.Index(fields=['order', 'priority']),
             models.Index(fields=['assembly_shop', 'planned_start']),

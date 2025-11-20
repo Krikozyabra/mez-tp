@@ -69,13 +69,12 @@ class OperationInline(admin.TabularInline):
 class OrderAdmin(admin.ModelAdmin):
     list_display = (
         "name",
-        "priority",
         "created_by",
         "created_at",
         "get_operations_count",
         "get_status",
     )
-    list_filter = ("priority", "created_at", "created_by")
+    list_filter = ("created_at", "created_by")
     search_fields = ("name", "description")
     readonly_fields = ("created_at", "updated_at")
     inlines = [OperationInline]
