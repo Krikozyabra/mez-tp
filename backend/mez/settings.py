@@ -154,7 +154,7 @@ REST_FRAMEWORK = {
         "rest_framework.authentication.BasicAuthentication",
     ],
     "DEFAULT_FILTER_BACKENDS": [
-#        "django_filters.rest_framework.DjangoFilterBackend", Почему-то выдает ошибку при запуске (я ХЗ)
+        "django_filters.rest_framework.DjangoFilterBackend",
         "rest_framework.filters.SearchFilter",
         "rest_framework.filters.OrderingFilter",
     ],
