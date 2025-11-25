@@ -28,18 +28,13 @@ admin.site.register(User, CustomUserAdmin)
 
 @admin.register(AssemblyShop)
 class AssemblyShopAdmin(admin.ModelAdmin):
-    list_display = ("name", "get_executors_count")
+    list_display = ("name",)
     search_fields = ("name",)
-
-    def get_executors_count(self, obj):
-        return obj.executor_set.count()
-
-    get_executors_count.short_description = "Количество исполнителей"
 
 
 @admin.register(Executor)
 class ExecutorAdmin(admin.ModelAdmin):
-    list_display = ("full_name", "user", "get_assembly_shops")
+    list_display = ("full_name", "get_assembly_shops")
     list_filter = ("assembly_shops",)
     search_fields = ("full_name", "user__username")
     filter_horizontal = ("assembly_shops",)

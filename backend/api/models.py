@@ -15,7 +15,6 @@ class AssemblyShop(models.Model):
         verbose_name_plural = "Сборочные цехи"
 
 class Executor(models.Model):
-    user = models.OneToOneField(User, on_delete=models.CASCADE, verbose_name="Пользователь")
     full_name = models.CharField(max_length=255, verbose_name="ФИО")
     assembly_shops = models.ManyToManyField(AssemblyShop, verbose_name="Рабочие цехи")
     
