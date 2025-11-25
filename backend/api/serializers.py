@@ -8,6 +8,14 @@ class OrderSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 class OperationSerializer(serializers.ModelSerializer):
+    actual_start = serializers.ReadOnlyField()
+    actual_end = serializers.ReadOnlyField()
+    actual_planned_end = serializers.ReadOnlyField()
     class Meta:
         model = Operation
         fields = '__all__'
+
+class LastOperationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Operation
+        fields = ['pk', 'priority', 'actual_planned_end']

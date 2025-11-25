@@ -53,6 +53,8 @@ class Operation(models.Model):
     planned_start = models.DateTimeField(verbose_name="Плановая дата начала")
     planned_end = models.DateTimeField(verbose_name="Плановая дата окончания")
 
+    actual_planned_end = models.DateTimeField(verbose_name="Актуальная дата окончания", blank=True, null=True)
+
     actual_start = models.DateTimeField(null=True, blank=True, verbose_name="Фактическая дата начала")
     actual_end = models.DateTimeField(null=True, blank=True, verbose_name="Фактическая дата окончания")
 
