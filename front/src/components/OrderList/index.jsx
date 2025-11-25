@@ -23,12 +23,12 @@ const OrderList = ({
                     isExpanded={expandedIds.has(order.id)}
                     canEdit={canEdit}
                     onToggle={onToggleOrder}
-          onSelectOperation={(currentOrder, operation) => onSelectOperation(currentOrder, operation)}
+                    onSelectOperation={(currentOrder, operation) => onSelectOperation(currentOrder, operation)}
                     onEditOrder={onEditOrder}
-          onEditOperation={(currentOrder, operation) => onEditOperation(currentOrder, operation)}
-          activeOperationId={activeOrderId === order.id ? activeOperationId : null}
-          timelineStartDate={timelineStartByOrder[order.id]}
-          onTimelineStartChange={(date) => onTimelineStartChange(order.id, date)}
+                    onEditOperation={(currentOrder, operation) => onEditOperation(currentOrder, operation)}
+                    activeOperationId={activeOrderId === order.id ? activeOperationId : null}
+                    timelineStartDate={timelineStartByOrder[order.id]}
+                    onTimelineStartChange={(date) => onTimelineStartChange(order.id, date)}
                 />
             ))}
         </div>

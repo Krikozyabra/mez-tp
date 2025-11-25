@@ -12,6 +12,17 @@ const formatDate = (date) =>
         month: '2-digit',
     });
 
+const formatDateRange = (startDate, endDate) => {
+    const formatter = new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: '2-digit' });
+    return `${formatter.format(new Date(startDate))} – ${formatter.format(new Date(endDate))}`;
+};
+
+const normalizeToDayStart = (date) => {
+    const d = new Date(date);
+    d.setHours(0, 0, 0, 0);
+    return d;
+};
+
 const GanttChart = ({
     operations = [],
     activeOperationId,
@@ -21,17 +32,20 @@ const GanttChart = ({
     hideLabels = false,
     compact = false,
     requireSelection = false,
+    onSelectOperation,
+    onEditOperation,
+    canEdit = false,
 }) => {
     const MS_PER_DAY = 1000 * 60 * 60 * 24;
-    const parsedStart = timelineStartDate ? new Date(timelineStartDate) : new Date();
-    const startDate = Number.isNaN(parsedStart.getTime()) ? new Date() : parsedStart;
+    const parsedStart = timelineStartDate ? new Date(timelineStartDate + 'T00:00:00') : new Date();
+    const startDate = normalizeToDayStart(Number.isNaN(parsedStart.getTime()) ? new Date() : parsedStart);
     const hasOperations = operations && operations.length > 0;
     const hasActiveOperation = operations.some((operation) => operation.id === activeOperationId);
     const maxEndDate = hasOperations
         ? operations.reduce((latest, operation) => {
-            const operationEnd = new Date(operation.endDate);
+            const operationEnd = normalizeToDayStart(operation.endDate);
             return operationEnd > latest ? operationEnd : latest;
-        }, new Date(timelineStartDate || startDate))
+        }, startDate)
         : addDays(startDate, 10);
     const columns = Math.max(10, Math.ceil((maxEndDate - startDate) / MS_PER_DAY) + 1);
     const scaleDates = Array.from({ length: columns }, (_, index) => addDays(startDate, index));
@@ -71,23 +85,40 @@ const GanttChart = ({
             )}
             {hasOperations && (!requireSelection || hasActiveOperation) ? (
                 <div className={styles.timeline}>
-                    <div className={styles.scale} style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}>
-                        {scaleDates.map((date, index) => (
-                            <span key={`scale-${index}`} className={styles.scaleLabel}>
-                                {formatDate(date)}
-                            </span>
-                        ))}
+                    <div className={styles.scaleRow}>
+                        <div className={styles.scaleSpacer}></div>
+                        <div className={styles.scale} style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}>
+                            {scaleDates.map((date, index) => (
+                                <span key={`scale-${index}`} className={styles.scaleLabel}>
+                                    {formatDate(date)}
+                                </span>
+                            ))}
+                        </div>
                     </div>
                     {operations.map((operation) => (
                         <div
                             key={operation.id}
                             className={`${styles.row} ${operation.id === activeOperationId ? styles.rowActive : ''}`}
+                            onClick={() => onSelectOperation?.(operation)}
                         >
-                            <span
-                                className={`${styles.rowLabel} ${hideLabels ? styles.rowLabelHidden : ''}`}
-                            >
-                                {hideLabels ? '.' : operation.name}
-                            </span>
+                            <div className={styles.operationInfo}>
+                                <span className={styles.operationName}>{operation.name}</span>
+                                <span className={styles.operationMeta}>
+                                    {formatDateRange(operation.startDate, operation.endDate)} •{' '}
+                                    {operation.assignedTo === 'technolog' ? 'Технолог' : 'Мастер'}
+                                </span>
+                            </div>
+                            {canEdit && onEditOperation && (
+                                <button
+                                    className={styles.editButton}
+                                    onClick={(event) => {
+                                        event.stopPropagation();
+                                        onEditOperation(operation);
+                                    }}
+                                >
+                                    Изменить
+                                </button>
+                            )}
                             <div
                                 className={styles.track}
                                 style={{
@@ -95,23 +126,24 @@ const GanttChart = ({
                                 }}
                             >
                                 {(() => {
-                                    const operationStart = new Date(operation.startDate);
-                                    const operationEnd = new Date(operation.endDate);
+                                    const operationStart = normalizeToDayStart(operation.startDate);
+                                    const operationEnd = normalizeToDayStart(operation.endDate);
                                     const startOffset = Math.floor((operationStart - startDate) / MS_PER_DAY);
-                                    const duration = Math.max(1, Math.ceil((operationEnd - operationStart) / MS_PER_DAY));
-                                    const rawEnd = startOffset + duration;
+                                    const endOffset = Math.ceil((operationEnd - startDate) / MS_PER_DAY);
+                                    const duration = Math.max(1, endOffset - startOffset);
                                     const clampedStart = Math.max(0, startOffset);
-                                    const clampedEnd = Math.min(columns, rawEnd);
+                                    const clampedEnd = Math.min(columns, clampedStart + duration);
                                     const progressWidth = Math.max(clampedEnd - clampedStart, 0);
                                     if (progressWidth <= 0) {
                                         return null;
                                     }
+                                    const columnWidth = 100 / columns;
                                     return (
                                         <div
                                             className={styles.progress}
                                             style={{
-                                                left: `${(clampedStart / columns) * 100}%`,
-                                                width: `${(progressWidth / columns) * 100}%`,
+                                                left: `${clampedStart * columnWidth}%`,
+                                                width: `${progressWidth * columnWidth}%`,
                                             }}
                                         />
                                     );

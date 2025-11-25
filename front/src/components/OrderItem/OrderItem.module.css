@@ -10,7 +10,7 @@
 
 .orderHeader {
     display: flex;
-    justify-content: space-between;
+    gap: 12px;
     align-items: center;
     cursor: pointer;
 }
@@ -57,10 +57,8 @@
 }
 
 .operationsLayout {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    gap: 16px;
-    align-items: stretch;
+    display: flex;
+    flex-direction: column;
 }
 
 .operations {

@@ -226,7 +226,18 @@ const MainPage = () => {
 
     const handleControlToggle = () => {
         if (role !== 'technolog') return;
-        setIsControlActive((prev) => !prev);
+        setIsControlActive((prev) => {
+            const newState = !prev;
+            // TODO: Вызов API для изменения состояния контроля
+            // await api.updateControlState(newState);
+            return newState;
+        });
+    };
+
+    const handleControlOperationClick = (operation) => {
+        // TODO: Обработчик клика по операции в панели контроля
+        // Можно открыть детали операции, перейти к заказу и т.д.
+        console.log('Operation clicked in control panel:', operation);
     };
 
     const currentRoleLabel = role === 'technolog' ? 'Технолог' : 'Мастер';
@@ -257,6 +268,7 @@ const MainPage = () => {
                         isControlActive={isControlActive}
                         onToggleControl={handleControlToggle}
                         canToggleControl={role === 'technolog'}
+                        onOperationClick={handleControlOperationClick}
                     />
                 </div>
                 <section className={styles.ordersArea}>

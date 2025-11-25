@@ -43,48 +43,19 @@ const OrderItem = ({
       </div>
       {isExpanded && (
         <div className={styles.operationsLayout}>
-          <div className={styles.operations}>
-            {order.operations.map((operation) => (
-              <div
-                key={operation.id}
-                className={`${styles.operationRow} ${
-                  activeOperationId === operation.id ? styles.operationRowActive : ''
-                }`}
-                onClick={() => onSelectOperation(order, operation)}
-              >
-                <div className={styles.operationInfo}>
-                  <span className={styles.operationName}>{operation.name}</span>
-                  <span className={styles.operationMeta}>
-                    {formatDateRange(operation.startDate, operation.endDate)} •{' '}
-                    {operation.assignedTo === 'technolog' ? 'Технолог' : 'Мастер'}
-                  </span>
-                </div>
-                {canEdit && (
-                  <button
-                    className={styles.primaryButton}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onEditOperation(order, operation);
-                    }}
-                  >
-                    Изменить
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-          <div className={styles.timelinePane}>
-            <GanttChart
-              operations={order.operations}
-              activeOperationId={activeOperationId}
-              timelineStartDate={fallbackTimelineStart}
-              onTimelineStartChange={onTimelineStartChange}
-              orderTitle={order.title}
-              hideLabels
-              compact
-              requireSelection
-            />
-          </div>
+          <GanttChart
+            operations={order.operations}
+            activeOperationId={activeOperationId}
+            timelineStartDate={fallbackTimelineStart}
+            onTimelineStartChange={onTimelineStartChange}
+            orderTitle={order.title}
+            hideLabels={false}
+            compact
+            requireSelection={false}
+            onSelectOperation={(operation) => onSelectOperation(order, operation)}
+            onEditOperation={canEdit ? (operation) => onEditOperation(order, operation) : null}
+            canEdit={canEdit}
+          />
         </div>
       )}
     </div>
