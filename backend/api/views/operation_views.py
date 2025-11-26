@@ -29,6 +29,18 @@ class OperationAPIGetLast(APIView):
             .last()
         if operation is None:
             return Response(status=404, data={"detail":"No operations in assembly shop or assembly shop primary key is invalid"})
-        serializer = LastOperationSerializer(operation)
-        json = JSONRenderer().render(serializer.data)
+        serialized = LastOperationSerializer(operation)
+        json = JSONRenderer().render(serialized.data)
+        return Response(status=200, data=json)
+    
+class OperationAPIGetByOrder(APIView):
+    def get(self, request, *args, **kwargs):
+        order_pk = self.kwargs.get('order_pk')
+        operations_list = Operation.objects\
+            .filter(order_id=order_pk)\
+            .all()
+        if operations_list is None:
+            return Response(status=404, data={"detail":"No operations in order or order_pk is invalid"})
+        serialized = OperationSerializer(operations_list, many=True)
+        json = JSONRenderer().render(serialized.data)
         return Response(status=200, data=json)

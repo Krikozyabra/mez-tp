@@ -13,6 +13,7 @@ urlpatterns = [
     path('operation/', OperationAPIList.as_view()),
     path('operation/<int:pk>/', OperationAPIUpdate.as_view()),
     path('operation/last_in_shop/<int:assembly_shop_pk>/', OperationAPIGetLast.as_view()),
+    path('operation/by_order/<int:order_pk>/', OperationAPIGetByOrder.as_view()),
 
     path('auth/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('auth/refresh/', TokenRefreshView.as_view(), name='token_refresh')
