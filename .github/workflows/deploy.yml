@@ -2,40 +2,40 @@ name: Deploy Django to Production
 
 on:
   push:
-    branches: [ main ]
+    branches: [master]
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    
+
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v3
-    
-    - name: Set up SSH
-      uses: webfactory/ssh-agent@v0.7.0
-      with:
-        ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
-    
-    - name: Deploy to server
-      run: |
-        ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'EOF'
-          set -e
-          
-          cd ~/mez-tp
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-          git fetch origin
-          git checkout main
-          git pull origin main
+      - name: Set up SSH
+        uses: webfactory/ssh-agent@v0.7.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
 
-          docker-compose down
-          docker-compose up -d --build
+      - name: Deploy to server
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'EOF'
+            set -e
+            
+            cd ~/mez-tp
 
-          docker-compose exec -T backend python manage.py migrate --noinput || echo "Миграции пропущены"
+            git fetch origin
+            git checkout master
+            git pull origin master
 
-          docker-compose exec -T backend python manage.py collectstatic --noinput || echo "Статика не собрана"
+            docker-compose down
+            docker-compose up -d --build
 
-          docker system prune -f
+            docker-compose exec -T backend python manage.py migrate --noinput || echo "Миграции пропущены"
 
-          echo "Приложение доступно по адресу: http://${{ secrets.SSH_HOST }}:8000"
-        EOF
+            docker-compose exec -T backend python manage.py collectstatic --noinput || echo "Статика не собрана"
+
+            docker system prune -f
+
+            echo "Приложение доступно по адресу: http://${{ secrets.SSH_HOST }}:8000"
+          EOF
