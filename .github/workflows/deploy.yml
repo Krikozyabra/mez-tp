@@ -3,9 +3,13 @@ name: Deploy Django to Production
 on:
   push:
     branches: [master]
+  pull_request:
+    branches: [master]
+    types: [closed]
 
 jobs:
   deploy:
+    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.merged == true)
     runs-on: ubuntu-latest
 
     steps:
