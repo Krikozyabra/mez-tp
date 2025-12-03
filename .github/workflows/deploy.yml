@@ -1,40 +1,60 @@
-- name: Deploy to server
-  run: |
-    ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'EOF'
-      set -e
-      
-      cd ~/mez-tp
+name: Deploy Django to Production
 
-      if [ -f .env ]; then
-        cp .env .env.backup
-      fi
-      
-      if [ -f backend/.env ]; then
-        cp backend/.env backend/.env.backup
-      fi
+on:
+  push:
+    branches: [master]
 
-      git fetch origin
-      git reset --hard origin/master
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
 
-      git clean -fd -e "*.env" -e "backend/.env" -e ".env.backup" -e "backend/.env.backup" 2>/dev/null || true
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-      if [ -f .env.backup ]; then
-        mv .env.backup .env
-      fi
-      
-      if [ -f backend/.env.backup ]; then
-        mv backend/.env.backup backend/.env
-      fi
+      - name: Set up SSH
+        uses: webfactory/ssh-agent@v0.7.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
 
-      docker-compose down
-      docker-compose up -d --build
+      - name: Deploy to server
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'EOF'
+            set -e
+            
+            cd ~/mez-tp
 
-      docker-compose exec -T backend python manage.py migrate --noinput || echo "Миграции пропущены"
 
-      docker-compose exec -T backend python manage.py collectstatic --noinput || echo "Статика не собрана"
+            if [ -f .env ]; then
+              cp .env .env.backup
+            fi
+            
+            if [ -f backend/.env ]; then
+              cp backend/.env backend/.env.backup
+            fi
 
-      docker system prune -f
+            git fetch origin
+            git reset --hard origin/master
 
-      echo "Деплой успешно завершен!"
-      echo "Приложение доступно по адресу: http://${{ secrets.SSH_HOST }}:8000"
-    EOF
+            git clean -fd -e "*.env" -e "backend/.env" -e ".env.backup" -e "backend/.env.backup" 2>/dev/null || true
+
+            if [ -f .env.backup ]; then
+              mv .env.backup .env
+            fi
+            
+            if [ -f backend/.env.backup ]; then
+              mv backend/.env.backup backend/.env
+            fi
+
+            docker-compose down
+            docker-compose up -d --build
+
+            docker-compose exec -T backend python manage.py migrate --noinput || echo "Миграции пропущены"
+
+            docker-compose exec -T backend python manage.py collectstatic --noinput || echo "Статика не собрана"
+
+            docker system prune -f
+
+            echo "Деплой успешно завершен!"
+            echo "Приложение доступно по адресу: http://${{ secrets.SSH_HOST }}:8000"
+          EOF
