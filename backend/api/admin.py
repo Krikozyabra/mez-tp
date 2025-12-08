@@ -1,42 +1,47 @@
-# admin.py
 from django.contrib import admin
-from django.contrib.auth.models import Group, User
+from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Group
 from django.contrib.auth.admin import UserAdmin
 from .models import AssemblyShop, Executor, Order, Operation
 
+# Получаем вашу кастомную модель пользователя
+User = get_user_model()
 
+# 1. Настройка админки для кастомного пользователя
+@admin.register(User)
 class CustomUserAdmin(UserAdmin):
     list_display = (
         "username",
         "email",
         "first_name",
         "last_name",
-        "get_groups",
+        "role",  # Добавили отображение роли
         "is_staff",
     )
-    list_filter = ("groups", "is_staff", "is_superuser")
+    list_filter = ("role", "is_staff", "is_superuser") # Фильтр по роли вместо групп
+    
+    # Добавляем поле 'role' в форму редактирования пользователя
+    fieldsets = UserAdmin.fieldsets + (
+        ('Дополнительная информация', {'fields': ('role',)}),
+    )
+    add_fieldsets = UserAdmin.add_fieldsets + (
+        ('Дополнительная информация', {'fields': ('role',)}),
+    )
 
-    def get_groups(self, obj):
-        return ", ".join([group.name for group in obj.groups.all()])
 
-    get_groups.short_description = "Группы"
-
-
-admin.site.unregister(User)
-admin.site.register(User, CustomUserAdmin)
-
-
+# 2. Цехи
 @admin.register(AssemblyShop)
 class AssemblyShopAdmin(admin.ModelAdmin):
     list_display = ("name",)
     search_fields = ("name",)
 
 
+# 3. Исполнители
 @admin.register(Executor)
 class ExecutorAdmin(admin.ModelAdmin):
     list_display = ("full_name", "get_assembly_shops")
     list_filter = ("assembly_shops",)
-    search_fields = ("full_name", "user__username")
+    search_fields = ("full_name",) # user__username убрал, если у Executor нет прямой связи с User, если есть - верните
     filter_horizontal = ("assembly_shops",)
 
     def get_assembly_shops(self, obj):
@@ -45,6 +50,7 @@ class ExecutorAdmin(admin.ModelAdmin):
     get_assembly_shops.short_description = "Рабочие цехи"
 
 
+# Инлайны для заказа
 class OperationInline(admin.TabularInline):
     model = Operation
     extra = 1
@@ -60,16 +66,18 @@ class OperationInline(admin.TabularInline):
     readonly_fields = ("completed",)
 
 
+# 4. Заказы
 @admin.register(Order)
 class OrderAdmin(admin.ModelAdmin):
     list_display = (
         "name",
-        "created_by",
+        # "created_by", # Раскомментируйте, если в модели Order есть поле created_by (User)
         "created_at",
         "get_operations_count",
         "get_status",
     )
-    list_filter = ("created_at", "created_by")
+    # list_filter = ("created_at", "created_by")
+    list_filter = ("created_at",)
     search_fields = ("name", "description")
     readonly_fields = ("created_at", "updated_at")
     inlines = [OperationInline]
@@ -89,12 +97,14 @@ class OrderAdmin(admin.ModelAdmin):
 
     get_status.short_description = "Статус выполнения"
 
-    def save_model(self, request, obj, form, change):
-        if not obj.pk:
-            obj.created_by = request.user
-        super().save_model(request, obj, form, change)
+    # Раскомментируйте этот блок, если в модели Order есть поле created_by
+    # def save_model(self, request, obj, form, change):
+    #     if not obj.pk:
+    #         obj.created_by = request.user
+    #     super().save_model(request, obj, form, change)
 
 
+# 5. Операции
 @admin.register(Operation)
 class OperationAdmin(admin.ModelAdmin):
     list_display = (
@@ -163,7 +173,11 @@ class OperationAdmin(admin.ModelAdmin):
     )
 
     def get_duration_display(self, obj):
-        return f"{obj.duration_minutes()} минут"
+        # Проверка на случай, если метод duration_minutes еще не реализован в модели или возвращает ошибку
+        try:
+            return f"{obj.duration_minutes()} минут"
+        except:
+            return "-"
 
     get_duration_display.short_description = "Длительность"
 
@@ -181,36 +195,43 @@ class OperationAdmin(admin.ModelAdmin):
     def get_checker_role_display(self, obj):
         """Показывает роль проверяющего"""
         if not obj.master_checker:
-            return "Технолог"
-        elif obj.master_checker.groups.filter(name="Мастер").exists():
+            return "-"
+        
+        # Исправленная логика: проверяем поле role, а не группы
+        role = getattr(obj.master_checker, 'role', None)
+        if role == 'master':
             return "Мастер"
+        elif role == 'technolog':
+            return "Технолог"
+        elif role == 'admin':
+            return "Админ"
         else:
-            return "Проверяющий"
+            return "Пользователь"
 
     get_checker_role_display.short_description = "Роль проверяющего"
 
     def get_form(self, request, obj=None, **kwargs):
         form = super().get_form(request, obj, **kwargs)
-
-        form.base_fields["master_checker"].help_text = (
-            "Может быть назначен любой пользователь. Если не назначен - проверку выполняет технолог."
-        )
+        if "master_checker" in form.base_fields:
+            form.base_fields["master_checker"].help_text = (
+                "Может быть назначен любой пользователь. Если не назначен - проверку выполняет технолог."
+            )
         return form
 
 
+# Настройка заголовков админки
+admin.site.site_header = "Панель управления производством"
+admin.site.site_title = "Админка MEZ"
+admin.site.index_title = "Управление данными системы"
+
+# Опционально: управление группами (можно убрать, если роли полностью заменяют группы)
 class GroupAdmin(admin.ModelAdmin):
     list_display = ("name", "get_users_count")
     filter_horizontal = ("permissions",)
 
     def get_users_count(self, obj):
         return obj.user_set.count()
-
     get_users_count.short_description = "Количество пользователей"
-
 
 admin.site.unregister(Group)
 admin.site.register(Group, GroupAdmin)
-
-admin.site.site_header = "Панель управления производством"
-admin.site.site_title = "Админка MEZ"
-admin.site.index_title = "Управление данными системы"

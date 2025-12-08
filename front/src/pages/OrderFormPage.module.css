@@ -266,3 +266,18 @@
   user-select: none;
 }
 
+.modalOverlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5); /* Полупрозрачный фон */
+  backdrop-filter: blur(2px); /* Размытие фона для акцента */
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 9999; /* Очень высокий индекс, чтобы быть поверх всего */
+}
+
+/* ... остальные стили modalContent, modalTitle и т.д. остаются прежними ... */

@@ -1,416 +1,311 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { api } from '../api/api';
+import { useOrderOperations } from '../hooks/useOrderOperations';
+import { mapOrderToBackend, mapOperationToBackend, mapBackendDetailToForm } from '../utils/mappers';
+import OperationCard from '../components/OperationCard';
+import DeleteConfirmModal from '../components/DeleteConfirmModal';
 import styles from './OrderFormPage.module.css';
 
-const formatDateInputValue = (date) => {
-  if (!date) return '';
-  if (typeof date === 'string') return date;
-  return date.toISOString().split('T')[0];
-};
-
-const addDays = (date, days) => {
-  const next = new Date(date);
-  next.setDate(next.getDate() + days);
-  return next;
-};
-
-const addMinutes = (date, minutes) => {
-  const next = new Date(date);
-  next.setMinutes(next.getMinutes() + minutes);
-  return next;
-};
-
-// Mock данные для цехов и исполнителей
-const WORKSHOPS = [
-  { id: '1', name: 'Цех №1' },
-  { id: '2', name: 'Цех №2' },
-  { id: '3', name: 'Цех №3' },
-];
-
-const PERFORMERS = [
-  { id: '1', name: 'Иванов И.И.' },
-  { id: '2', name: 'Петров П.П.' },
-  { id: '3', name: 'Сидоров С.С.' },
-  { id: '4', name: 'Козлов К.К.' },
-];
-
-const MASTERS = [
-  { id: '1', name: 'Мастер 1' },
-  { id: '2', name: 'Мастер 2' },
-  { id: '3', name: 'Мастер 3' },
-];
-
-const OrderFormPage = ({ order, onSave, onCancel, onDelete, allOrders = [] }) => {
-  const isEditMode = !!order;
-  const [orderTitle, setOrderTitle] = useState(order?.title || '');
-  const [orderDescription, setOrderDescription] = useState(order?.description || '');
-  const [operations, setOperations] = useState(
-    order?.operations?.map(op => ({
-      ...op,
-      workshopId: op.workshopId || '',
-      performerIds: op.performerIds || [],
-      priority: op.priority || 'normal',
-      durationMinutes: op.durationMinutes || 0,
-      needsControl: op.needsControl || false,
-      masterId: op.masterId || '',
-    })) || []
-  );
-
-  // Получить последнюю операцию в цехе для автозаполнения даты
-  const getLastOperationInWorkshop = (workshopId) => {
-    if (!workshopId) return null;
+const OrderFormPage = ({ order, onSave, onCancel, onDelete }) => {
+    const isEditMode = !!order;
+    const [orderTitle, setOrderTitle] = useState(order?.title || '');
+    const [orderDescription, setOrderDescription] = useState(order?.description || '');
     
-    // Ищем в текущем заказе
-    const operationsInWorkshop = operations.filter(op => op.workshopId === workshopId);
-    if (operationsInWorkshop.length > 0) {
-      const sorted = [...operationsInWorkshop].sort((a, b) => 
-        new Date(b.endDate) - new Date(a.endDate)
-      );
-      return sorted[0];
-    }
-    
-    // Ищем в других заказах
-    const allOps = allOrders.flatMap(o => o.operations || []);
-    const opsInWorkshop = allOps.filter(op => op.workshopId === workshopId);
-    if (opsInWorkshop.length > 0) {
-      const sorted = [...opsInWorkshop].sort((a, b) => 
-        new Date(b.endDate) - new Date(a.endDate)
-      );
-      return sorted[0];
-    }
-    
-    return null;
-  };
+    // --- Состояния для справочников ---
+    const [workshops, setWorkshops] = useState([]);
+    const [executorsByWorkshop, setExecutorsByWorkshop] = useState({});
+    const [isLoadingRefs, setIsLoadingRefs] = useState(true);
+    const [isSaving, setIsSaving] = useState(false);
+    const [mastersList, setMastersList] = useState([]);
 
-  const handleAddOperation = () => {
-    const today = new Date();
-    const lastOperation = operations[operations.length - 1];
-    const startDate = lastOperation 
-      ? formatDateInputValue(addDays(new Date(lastOperation.endDate), 1))
-      : formatDateInputValue(today);
-    const endDate = lastOperation
-      ? formatDateInputValue(addDays(new Date(lastOperation.endDate), 4))
-      : formatDateInputValue(addDays(today, 3));
+    // --- Состояния для модальных окон ---
+    const [isOpDeleteModalOpen, setIsOpDeleteModalOpen] = useState(false);
+    const [isOrderDeleteModalOpen, setIsOrderDeleteModalOpen] = useState(false);
+    const [operationToDelete, setOperationToDelete] = useState(null);
 
-    const newOperation = {
-      id: crypto.randomUUID(),
-      name: '',
-      workshopId: '',
-      performerIds: [],
-      priority: 'normal',
-      startDate: startDate,
-      endDate: endDate,
-      durationMinutes: 0,
-      needsControl: false,
-      masterId: '',
-      assignedTo: 'technolog',
-    };
-    setOperations([...operations, newOperation]);
-  };
+    const { 
+        operations, 
+        setOperations,
+        addOperation, 
+        removeOperation, 
+        updateOperation,
+        togglePerformer
+    } = useOrderOperations(order?.operations);
 
-  const handleRemoveOperation = (operationId) => {
-    setOperations(operations.filter(op => op.id !== operationId));
-  };
+    // --- ЗАГРУЗКА ИСПОЛНИТЕЛЕЙ ---
+    const fetchExecutorsForWorkshop = useCallback(async (workshopId) => {
+        if (!workshopId) return;
+        if (executorsByWorkshop[workshopId]) return;
 
-  const handleOperationChange = (operationId, field, value) => {
-    setOperations(operations.map(op => {
-      if (op.id !== operationId) return op;
-      
-      const updated = { ...op, [field]: value };
-      
-      // Если изменился цех, обновляем дату начала
-      if (field === 'workshopId' && value) {
-        const lastOp = getLastOperationInWorkshop(value);
-        if (lastOp) {
-          updated.startDate = formatDateInputValue(addDays(new Date(lastOp.endDate), 1));
+        try {
+            const data = await api.refs.getExecutorsByWorkshop(workshopId);
+            setExecutorsByWorkshop(prev => ({
+                ...prev,
+                [workshopId]: data || []
+            }));
+        } catch (error) {
+            console.error(`Error loading executors for workshop ${workshopId}`, error);
         }
-      }
-      
-      // Если изменилась длительность, пересчитываем дату окончания
-      if (field === 'durationMinutes' && value > 0 && updated.startDate) {
-        const start = new Date(updated.startDate);
-        const end = addMinutes(start, parseInt(value) || 0);
-        updated.endDate = formatDateInputValue(end);
-      }
-      
-      // Если изменилась дата начала и есть длительность, пересчитываем дату окончания
-      if (field === 'startDate' && updated.durationMinutes > 0) {
-        const start = new Date(value);
-        const end = addMinutes(start, updated.durationMinutes);
-        updated.endDate = formatDateInputValue(end);
-      }
-      
-      // Если изменилась дата окончания, пересчитываем длительность
-      if (field === 'endDate' && updated.startDate) {
-        const start = new Date(updated.startDate);
-        const end = new Date(value);
-        const diffMs = end - start;
-        updated.durationMinutes = Math.round(diffMs / (1000 * 60));
-      }
-      
-      return updated;
-    }));
-  };
+    }, [executorsByWorkshop]);
 
-  const handleTogglePerformer = (operationId, performerId) => {
-    setOperations(operations.map(op => {
-      if (op.id !== operationId) return op;
-      const performerIds = op.performerIds || [];
-      const isSelected = performerIds.includes(performerId);
-      return {
-        ...op,
-        performerIds: isSelected
-          ? performerIds.filter(id => id !== performerId)
-          : [...performerIds, performerId],
-      };
-    }));
-  };
+    // --- ПЕРВОНАЧАЛЬНАЯ ЗАГРУЗКА ---
+    useEffect(() => {
+        const initData = async () => {
+            setIsLoadingRefs(true);
+            try {
+                const [workshopsData, mastersData] = await Promise.all([
+                    api.refs.getWorkshops(),
+                    api.refs.getMasters() // Запрос мастеров
+                ]);
 
-  const handleSave = () => {
-    if (!orderTitle.trim()) {
-      alert('Пожалуйста, введите название заказа');
-      return;
-    }
-    
-    if (operations.length === 0) {
-      alert('Пожалуйста, добавьте хотя бы одну операцию');
-      return;
-    }
-    
-    // Валидация операций
-    for (const op of operations) {
-      if (!op.name.trim()) {
-        alert('Пожалуйста, заполните название для всех операций');
-        return;
-      }
-      if (!op.startDate || !op.endDate) {
-        alert('Пожалуйста, заполните даты для всех операций');
-        return;
-      }
-      if (new Date(op.endDate) <= new Date(op.startDate)) {
-        alert('Дата окончания должна быть позже даты начала для всех операций');
-        return;
-      }
-    }
-    
-    const orderData = {
-      id: order?.id || crypto.randomUUID(),
-      title: orderTitle.trim(),
-      description: orderDescription.trim(),
-      operations: operations.map(op => ({
-        id: op.id,
-        name: op.name.trim(),
-        startDate: op.startDate,
-        endDate: op.endDate,
-        assignedTo: op.assignedTo,
-        workshopId: op.workshopId,
-        performerIds: op.performerIds,
-        priority: op.priority,
-        durationMinutes: op.durationMinutes,
-        needsControl: op.needsControl,
-        masterId: op.needsControl ? op.masterId : '',
-      })),
+                setWorkshops(workshopsData?.results || []); // Сохраняем
+                setMastersList(mastersData?.results || []); // Сохраняем
+
+                const uniqueWorkshopIds = [...new Set(operations
+                    .map(op => op.workshopId)
+                    .filter(id => id)
+                )];
+                
+                await Promise.all(uniqueWorkshopIds.map(id => fetchExecutorsForWorkshop(id)));
+            } catch (err) {
+                console.error("Ref loading error", err);
+            } finally {
+                setIsLoadingRefs(false);
+            }
+        };
+        initData();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []); 
+
+    // --- ОБРАБОТЧИК ИЗМЕНЕНИЙ ---
+    const handleOperationChange = async (opId, field, value) => {
+        updateOperation(opId, field, value);
+        
+        if (field === 'workshopId' && value) {
+            fetchExecutorsForWorkshop(value);
+            updateOperation(opId, 'performerIds', []); 
+
+            // 5) АВТОМАТИЧЕСКИЙ ПРИОРИТЕТ
+            try {
+                // Используем существующий метод API
+                const lastOpData = await api.operations.getLastInShop(value);
+                
+                // Если есть последняя операция, берем её приоритет + 1
+                // Если цех пустой (data === null), ставим приоритет 1
+                const newPriority = lastOpData ? (parseInt(lastOpData.priority) + 1) : 1;
+                
+                updateOperation(opId, 'priority', newPriority);
+            } catch (e) {
+                console.error("Auto priority error", e);
+                // Фоллбэк на 1
+                updateOperation(opId, 'priority', 1);
+            }
+        }
     };
-    
-    onSave(orderData);
-  };
 
-  return (
-    <div className={styles.page}>
-      <div className={styles.container}>
-        <div className={styles.header}>
-          <h1 className={styles.title}>{isEditMode ? 'Редактирование заказа' : 'Создание заказа'}</h1>
-          <div className={styles.headerActions}>
-            <button className={styles.cancelButton} onClick={onCancel}>
-              Отмена
-            </button>
-            {isEditMode && (
-              <button className={styles.deleteButton} onClick={onDelete}>
-                Удалить
-              </button>
-            )}
-            <button className={styles.saveButton} onClick={handleSave}>
-              Сохранить
-            </button>
-          </div>
-        </div>
+    // --- ЛОГИКА УДАЛЕНИЯ ---
+    const handleInitiateOpDelete = (op) => {
+        setOperationToDelete(op);
+        setIsOpDeleteModalOpen(true);
+    };
 
-        <div className={styles.form}>
-          <div className={styles.section}>
-            <label className={styles.label}>Название заказа</label>
-            <input
-              type="text"
-              className={styles.input}
-              value={orderTitle}
-              onChange={(e) => setOrderTitle(e.target.value)}
-              placeholder="Введите название заказа"
-            />
-          </div>
+    const handleConfirmOpDelete = async () => {
+        if (!operationToDelete) return;
+        const isLocal = typeof operationToDelete.id === 'string' && operationToDelete.id.length > 20;
+        if (!isLocal) {
+            try { await api.operations.delete(operationToDelete.id); } 
+            catch (error) { console.error(error); alert('Ошибка удаления'); return; }
+        }
+        removeOperation(operationToDelete.id);
+        setIsOpDeleteModalOpen(false);
+        setOperationToDelete(null);
+    };
 
-          <div className={styles.section}>
-            <label className={styles.label}>Описание</label>
-            <textarea
-              className={styles.textarea}
-              value={orderDescription}
-              onChange={(e) => setOrderDescription(e.target.value)}
-              placeholder="Введите описание заказа"
-              rows={4}
-            />
-          </div>
+    const handleInitiateOrderDelete = () => setIsOrderDeleteModalOpen(true);
 
-          <div className={styles.operationsSection}>
-            <div className={styles.sectionHeader}>
-              <h2 className={styles.sectionTitle}>Операции</h2>
-              <button className={styles.addOperationButton} onClick={handleAddOperation}>
-                + Добавить операцию
-              </button>
+    const handleConfirmOrderDelete = async () => {
+        if (!order?.id) return;
+        try {
+            await api.orders.delete(order.id);
+            if (onDelete) onDelete();
+        } catch (error) {
+            console.error(error); alert('Ошибка удаления заказа');
+        } finally {
+            setIsOrderDeleteModalOpen(false);
+        }
+    };
+
+    // --- ЛОГИКА СОХРАНЕНИЯ ОДНОЙ ОПЕРАЦИИ (ИСПРАВЛЕНО) ---
+    const handleSaveSingleOperation = async (operation) => {
+        // 1. Валидация
+        if (!operation.name.trim()) return alert('Введите название операции');
+        if (!operation.workshopId) return alert('Выберите цех');
+        if (!operation.startDate || !operation.endDate) return alert('Заполните даты');
+
+        // 2. Проверка ID заказа
+        let orderId = order?.id;
+        // Если ID длинный (UUID), значит заказ еще не сохранен на бэкенде
+        const isNewOrderOnBackend = typeof orderId === 'string' && orderId.length > 20;
+        
+        if (isNewOrderOnBackend) {
+             alert('Сначала сохраните сам заказ (кнопка внизу), чтобы создать его в системе.');
+             return;
+        }
+
+        try {
+            const payload = mapOperationToBackend(operation, orderId);
+            
+            // 3. Проверка: новая операция или обновление?
+            const isOpNew = typeof operation.id === 'string' && operation.id.length > 20;
+            
+            let savedOpData;
+            if (isOpNew) {
+                savedOpData = await api.operations.create(payload);
+            } else {
+                savedOpData = await api.operations.update(operation.id, payload);
+            }
+
+            // 4. ВАЖНО: Обновляем локальный стейт (меняем UUID на реальный ID)
+            setOperations(prev => prev.map(op => {
+                if (op.id === operation.id) {
+                    // Если бэкенд возвращает полный объект, берем id оттуда
+                    // Если просто {id: ...}, берем так
+                    return { ...op, id: savedOpData.id || savedOpData.pk };
+                }
+                return op;
+            }));
+
+            alert('Операция успешно сохранена!');
+        } catch (e) {
+            console.error(e);
+            alert('Ошибка при сохранении операции. Проверьте консоль.');
+        }
+    };
+
+    // --- ЛОГИКА МАССОВОГО СОХРАНЕНИЯ ---
+    const persistData = async () => {
+        if (!orderTitle.trim()) { alert('Введите название заказа'); return false; }
+        
+        setIsSaving(true);
+        try {
+            let orderId = order?.id;
+            const isNewOrderOnBackend = typeof orderId === 'string' && orderId.length > 20; 
+
+            if (isNewOrderOnBackend) {
+                const createdOrder = await api.orders.create({ title: orderTitle, description: orderDescription });
+                orderId = createdOrder.id;
+            } else {
+                await api.orders.update(orderId, { title: orderTitle, description: orderDescription });
+            }
+
+            const operationPromises = operations.map(op => {
+                const payload = mapOperationToBackend(op, orderId);
+                const isOpNew = typeof op.id === 'string' && op.id.length > 20;
+                return isOpNew ? api.operations.create(payload) : api.operations.update(op.id, payload);
+            });
+
+            await Promise.all(operationPromises);
+
+            const updatedOrderData = await api.orders.getOne(orderId);
+            const formFormat = mapBackendDetailToForm(updatedOrderData);
+            setOperations(formFormat.operations);
+
+            return orderId;
+        } catch (error) {
+            console.error("Save error:", error);
+            alert("Ошибка сохранения.");
+            return false;
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    const handleSaveOrderClick = async () => {
+        const savedOrderId = await persistData();
+        if (savedOrderId) onSave({ id: savedOrderId });
+    };
+
+    const handleAddOperationClick = async () => {
+        const savedOrderId = await persistData();
+        if (savedOrderId) addOperation();
+    };
+
+    return (
+        <div className={styles.page}>
+            <div className={styles.container}>
+                <div className={styles.header}>
+                    <h1 className={styles.title}>{isEditMode ? 'Редактирование заказа' : 'Создание заказа'}</h1>
+                    <div className={styles.headerActions}>
+                        <button className={styles.cancelButton} onClick={onCancel} disabled={isSaving}>
+                            Отмена
+                        </button>
+                        {isEditMode && (
+                            <button className={styles.deleteButton} onClick={handleInitiateOrderDelete} disabled={isSaving}>
+                                Удалить
+                            </button>
+                        )}
+                        <button className={styles.saveButton} onClick={handleSaveOrderClick} disabled={isSaving}>
+                            {isSaving ? 'Сохранение...' : 'Сохранить заказ'}
+                        </button>
+                    </div>
+                </div>
+
+                <div className={styles.form}>
+                    <div className={styles.section}>
+                        <label className={styles.label}>Название заказа</label>
+                        <input className={styles.input} value={orderTitle} onChange={(e) => setOrderTitle(e.target.value)} />
+                    </div>
+                    <div className={styles.section}>
+                        <label className={styles.label}>Описание</label>
+                        <textarea className={styles.textarea} rows={4} value={orderDescription} onChange={(e) => setOrderDescription(e.target.value)} />
+                    </div>
+
+                    <div className={styles.operationsSection}>
+                        <div className={styles.sectionHeader}>
+                            <h2 className={styles.sectionTitle}>Операции</h2>
+                            <button className={styles.addOperationButton} onClick={handleAddOperationClick} disabled={isSaving}>
+                                {isSaving ? 'Сохранение...' : '+ Добавить операцию'}
+                            </button>
+                        </div>
+                        
+                        {operations.length === 0 ? (
+                            <div className={styles.emptyState}>Нет операций.</div>
+                        ) : (
+                            operations.map((op, idx) => (
+                                <OperationCard
+                                key={op.id}
+                                index={idx}
+                                operation={op}
+                                orderId={order?.id}
+                                workshops={workshops}
+                                executors={executorsByWorkshop[op.workshopId] || []}
+                                masters={mastersList} // <--- ПЕРЕДАЕМ МАСТЕРОВ
+                                onChange={handleOperationChange}
+                                onTogglePerformer={togglePerformer}
+                                onDeleteInitiate={handleInitiateOpDelete}
+                                onSaveSingle={handleSaveSingleOperation} 
+                            />
+                            ))
+                        )}
+                    </div>
+                </div>
             </div>
 
-            {operations.length === 0 ? (
-              <div className={styles.emptyState}>
-                Операции не добавлены. Нажмите "Добавить операцию" для создания первой операции.
-              </div>
-            ) : (
-              operations.map((operation, index) => (
-                <div key={operation.id} className={styles.operationCard}>
-                  <div className={styles.operationHeader}>
-                    <h3 className={styles.operationTitle}>Операция {index + 1}</h3>
-                    <button
-                      className={styles.removeOperationButton}
-                      onClick={() => handleRemoveOperation(operation.id)}
-                    >
-                      Удалить
-                    </button>
-                  </div>
+            <DeleteConfirmModal 
+                isOpen={isOpDeleteModalOpen}
+                itemName={operationToDelete?.name}
+                onConfirm={handleConfirmOpDelete}
+                onCancel={() => setIsOpDeleteModalOpen(false)}
+            />
 
-                  <div className={styles.operationFields}>
-                    <div className={styles.fieldRow}>
-                      <div className={styles.field}>
-                        <label className={styles.fieldLabel}>Название операции</label>
-                        <input
-                          type="text"
-                          className={styles.fieldInput}
-                          value={operation.name}
-                          onChange={(e) => handleOperationChange(operation.id, 'name', e.target.value)}
-                          placeholder="Введите название операции"
-                        />
-                      </div>
-
-                      <div className={styles.field}>
-                        <label className={styles.fieldLabel}>Выбор цеха</label>
-                        <select
-                          className={styles.fieldSelect}
-                          value={operation.workshopId}
-                          onChange={(e) => handleOperationChange(operation.id, 'workshopId', e.target.value)}
-                        >
-                          <option value="">Выберите цех</option>
-                          {WORKSHOPS.map(workshop => (
-                            <option key={workshop.id} value={workshop.id}>{workshop.name}</option>
-                          ))}
-                        </select>
-                      </div>
-
-                      <div className={styles.field}>
-                        <label className={styles.fieldLabel}>Выбор исполнителей (их может быть несколько)</label>
-                        <div className={styles.performersList}>
-                          {PERFORMERS.map(performer => (
-                            <label key={performer.id} className={styles.checkboxLabel}>
-                              <input
-                                type="checkbox"
-                                checked={operation.performerIds?.includes(performer.id) || false}
-                                onChange={() => handleTogglePerformer(operation.id, performer.id)}
-                              />
-                              <span>{performer.name}</span>
-                            </label>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className={styles.fieldRow}>
-                      <div className={styles.field}>
-                        <label className={styles.fieldLabel}>Приоритет</label>
-                        <select
-                          className={styles.fieldSelect}
-                          value={operation.priority}
-                          onChange={(e) => handleOperationChange(operation.id, 'priority', e.target.value)}
-                        >
-                          <option value="low">Низкий</option>
-                          <option value="normal">Обычный</option>
-                          <option value="high">Высокий</option>
-                          <option value="urgent">Срочный</option>
-                        </select>
-                      </div>
-
-                      <div className={styles.field}>
-                        <label className={styles.fieldLabel}>Плановая дата начала</label>
-                        <input
-                          type="date"
-                          className={styles.fieldInput}
-                          value={operation.startDate}
-                          onChange={(e) => handleOperationChange(operation.id, 'startDate', e.target.value)}
-                        />
-                      </div>
-
-                      <div className={styles.field}>
-                        <label className={styles.fieldLabel}>Плановая дата завершения</label>
-                        <input
-                          type="date"
-                          className={styles.fieldInput}
-                          value={operation.endDate}
-                          onChange={(e) => handleOperationChange(operation.id, 'endDate', e.target.value)}
-                        />
-                      </div>
-
-                      <div className={styles.field}>
-                        <label className={styles.fieldLabel}>Длительность операции в минутах</label>
-                        <input
-                          type="number"
-                          className={styles.fieldInput}
-                          value={operation.durationMinutes || ''}
-                          onChange={(e) => handleOperationChange(operation.id, 'durationMinutes', parseInt(e.target.value) || 0)}
-                          min="0"
-                          placeholder="0"
-                        />
-                      </div>
-                    </div>
-
-                    <div className={styles.fieldRow}>
-                      <div className={styles.field}>
-                        <label className={styles.checkboxLabel}>
-                          <input
-                            type="checkbox"
-                            checked={operation.needsControl || false}
-                            onChange={(e) => handleOperationChange(operation.id, 'needsControl', e.target.checked)}
-                          />
-                          <span>Нужен ли контроль?</span>
-                        </label>
-                        {operation.needsControl && (
-                          <div className={styles.field} style={{ marginTop: '8px' }}>
-                            <label className={styles.fieldLabel}>Если да, то выбираем мастера</label>
-                            <select
-                              className={styles.fieldSelect}
-                              value={operation.masterId}
-                              onChange={(e) => handleOperationChange(operation.id, 'masterId', e.target.value)}
-                            >
-                              <option value="">Выберите мастера</option>
-                              {MASTERS.map(master => (
-                                <option key={master.id} value={master.id}>{master.name}</option>
-                              ))}
-                            </select>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
+            <DeleteConfirmModal 
+                isOpen={isOrderDeleteModalOpen}
+                itemName={`заказ "${orderTitle}"`}
+                onConfirm={handleConfirmOrderDelete}
+                onCancel={() => setIsOrderDeleteModalOpen(false)}
+            />
         </div>
-      </div>
-    </div>
-  );
+    );
 };
 
 export default OrderFormPage;
-

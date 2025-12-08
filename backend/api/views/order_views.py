@@ -1,7 +1,7 @@
 from rest_framework import generics
 from rest_framework.permissions import IsAuthenticatedOrReadOnly
-from ..models import Order
-from ..serializers import OrderSerializer
+from api.models import Order
+from api.serializers import OrderSerializer
 # Create your views here.
 
 class OrderAPIList(generics.ListCreateAPIView):

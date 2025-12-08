@@ -57,10 +57,37 @@
     padding: 16px;
 }
 
+/* Изменено для выравнивания заголовка и даты */
+.ordersHeader {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
 .ordersTitle {
     font-size: 20px;
     font-weight: 600;
-    margin-bottom: 12px;
+    /* margin-bottom удален, так как теперь есть обертка ordersHeader */
+}
+
+/* Стили для глобального выбора даты */
+.globalDateControl {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    color: #64748b;
+}
+
+.globalDateInput {
+    border: 1px solid #cbd5f5;
+    border-radius: 8px;
+    padding: 6px 10px;
+    font-size: 14px;
+    color: #0f172a;
+    font-family: inherit;
+    background: #f8fafc;
 }
 
 .formGroup {

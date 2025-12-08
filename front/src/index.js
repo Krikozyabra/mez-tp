@@ -2,21 +2,13 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import './index.css';
-import { RoleProvider } from './context/RoleContext';
+import { AuthProvider } from './context/AuthContext'; // <--- Добавьте это
 
-const container = document.getElementById('root');
-
-if (!container) {
-    throw new Error('Root element not found');
-}
-
-const root = ReactDOM.createRoot(container);
-
-root.render(
-    <React.StrictMode>
-        <RoleProvider>
-            <App />
-        </RoleProvider>
-    </React.StrictMode>,
+ReactDOM.createRoot(document.getElementById('root')).render(
+  <React.StrictMode>
+    {/* Добавьте AuthProvider здесь */}
+    <AuthProvider>
+      <App />
+    </AuthProvider>
+  </React.StrictMode>,
 );
-

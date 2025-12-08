@@ -1,8 +1,22 @@
 # models.py
 from django.db import models
-from django.contrib.auth.models import User
+from django.contrib.auth.models import User, AbstractUser
 from django.core.exceptions import ValidationError
 from django.utils import timezone
+
+class CustomUser(AbstractUser):
+    ROLE_CHOICES = (
+        ('master', 'Мастер'),
+        ('technolog', 'Технолог'),
+        ('admin', 'Администратор'),
+    )
+    
+    role = models.CharField(
+        max_length=20, 
+        choices=ROLE_CHOICES, 
+        blank=True,
+        null=True
+    )
 
 class AssemblyShop(models.Model):
     name = models.CharField(max_length=255, verbose_name="Название цеха")
@@ -28,7 +42,7 @@ class Executor(models.Model):
 class Order(models.Model):
     name = models.CharField(max_length=255, verbose_name="Название заказа")
     description = models.TextField(verbose_name="Описание/Чертеж")
-    created_by = models.ForeignKey(User, on_delete=models.CASCADE, verbose_name="Создатель")
+    created_by = models.ForeignKey(CustomUser, on_delete=models.CASCADE, verbose_name="Создатель")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Дата обновления")
     
@@ -54,13 +68,14 @@ class Operation(models.Model):
     planned_end = models.DateTimeField(verbose_name="Плановая дата окончания")
 
     actual_planned_end = models.DateTimeField(verbose_name="Актуальная дата окончания", blank=True, null=True)
+    actual_planned_start = models.DateTimeField(verbose_name="Актуальная дата начала", blank=True, null=True)
 
     actual_start = models.DateTimeField(null=True, blank=True, verbose_name="Фактическая дата начала")
     actual_end = models.DateTimeField(null=True, blank=True, verbose_name="Фактическая дата окончания")
 
     needs_master_check = models.BooleanField(default=False, verbose_name="Требуется проверка мастером")
     master_checker = models.ForeignKey(
-        User, 
+        CustomUser, 
         on_delete=models.SET_NULL, 
         null=True, 
         blank=True, 
@@ -87,7 +102,13 @@ class Operation(models.Model):
         if self.actual_end and not self.actual_start and self.planned_start and self.planned_end:
             duration = self.planned_end - self.planned_start
             self.actual_start = self.actual_end - duration
-
+        # if the first save
+        if self.actual_planned_end == None:
+            self.actual_planned_end = self.planned_end
+            
+        if self.actual_planned_start == None:
+            self.actual_planned_start = self.planned_start
+        
         if not self.needs_master_check:
             self.master_checker = None
         
@@ -119,3 +140,4 @@ class Operation(models.Model):
             models.Index(fields=['order', 'priority']),
             models.Index(fields=['assembly_shop', 'planned_start']),
         ]
+        

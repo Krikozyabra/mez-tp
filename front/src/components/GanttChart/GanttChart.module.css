@@ -160,10 +160,61 @@
     top: 8px;
     height: 24px;
     border-radius: 12px;
-    background: linear-gradient(90deg, #3b82f6, #2563eb);
     box-sizing: border-box;
+    transition: background-color 0.2s ease;
 }
 
 .rowActive .operationName {
     color: #2563eb;
+}
+
+/* Цвета для статусов */
+.progressPending {
+    background-color: #eab308; /* Желтый */
+}
+
+.progressCompleted {
+    background-color: #22c55e; /* Зеленый */
+}
+
+/* Опционально: изменим цвет при наведении */
+.row:hover .progressPending {
+    background-color: #ca8a04;
+}
+
+.row:hover .progressCompleted {
+    background-color: #16a34a;
+}
+
+.workshopBadge {
+    font-weight: 600;
+    color: #475569;
+    background: #f1f5f9;
+    padding: 2px 6px;
+    border-radius: 4px;
+    margin-right: 4px;
+}
+
+/* Стиль для плановой (второй) линии */
+.progressPlanned {
+    position: absolute;
+    height: 14px; /* Чуть тоньше основной */
+    top: 75%;     /* Сдвигаем вниз */
+    transform: translateY(-50%);
+    background: repeating-linear-gradient(
+        45deg,
+        #cbd5e1,
+        #cbd5e1 5px,
+        #94a3b8 5px,
+        #94a3b8 10px
+    ); /* Полосатая текстура */
+    opacity: 0.7;
+    border-radius: 4px;
+    z-index: 1; /* Под основной */
+    pointer-events: none;
+}
+
+/* Приподнимем основную полоску, если активна, чтобы было видно обе */
+.rowActive .progress {
+    top: 35%; 
 }
