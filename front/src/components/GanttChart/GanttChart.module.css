@@ -1,0 +1,220 @@
+.wrapper {
+    background: #fff;
+    border-radius: 16px;
+    border: 1px solid #e2e8f0;
+    padding: 16px;
+    min-height: 300px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.compact {
+  background: transparent;
+  border: none;
+  padding: 0;
+  min-height: auto;
+}
+
+.compactControls {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.title {
+    font-size: 18px;
+    font-weight: 600;
+    color: #0f172a;
+}
+
+.meta {
+    color: #475569;
+    font-size: 14px;
+}
+
+.controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    color: #475569;
+}
+
+.dateInput {
+    border: 1px solid #cbd5f5;
+    border-radius: 10px;
+    padding: 6px 10px;
+    font-size: 14px;
+}
+
+.timeline {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.scaleRow {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.scaleSpacer {
+    width: 304px;
+    flex-shrink: 0;
+}
+
+.scale {
+    display: grid;
+    gap: 8px;
+    text-align: center;
+    flex: 1;
+}
+
+.scaleLabel {
+    writing-mode: vertical-rl;
+    transform: rotate(180deg);
+    font-size: 12px;
+    color: #475569;
+}
+
+.row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: background 0.2s ease;
+}
+
+.row:hover {
+    background: #f8fafc;
+}
+
+.rowActive {
+    background: #e0f2fe;
+    border: 1px solid #93c5fd;
+}
+
+.operationInfo {
+    display: flex;
+    flex-direction: column;
+    min-width: 200px;
+    gap: 4px;
+}
+
+.operationName {
+    font-weight: 600;
+    color: #0f172a;
+    font-size: 14px;
+}
+
+.operationMeta {
+    font-size: 12px;
+    color: #64748b;
+}
+
+.editButton {
+    padding: 6px 12px;
+    border-radius: 8px;
+    border: none;
+    background: #22c55e;
+    color: #fff;
+    font-weight: 600;
+    font-size: 13px;
+    cursor: pointer;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.editButton:hover {
+    background: #16a34a;
+}
+
+.track {
+    --columns: 10;
+    position: relative;
+    flex: 1;
+    height: 40px;
+    border-radius: 14px;
+    background-color: #f8fafc;
+    background-image: repeating-linear-gradient(to right,
+            #e2e8f0 0,
+            #e2e8f0 1px,
+            transparent 1px,
+            transparent calc(100% / var(--columns)));
+    overflow: hidden;
+}
+
+.progress {
+    position: absolute;
+    top: 8px;
+    height: 24px;
+    border-radius: 12px;
+    box-sizing: border-box;
+    transition: background-color 0.2s ease;
+}
+
+.rowActive .operationName {
+    color: #2563eb;
+}
+
+/* Цвета для статусов */
+.progressPending {
+    background-color: #eab308; /* Желтый */
+}
+
+.progressCompleted {
+    background-color: #22c55e; /* Зеленый */
+}
+
+/* Опционально: изменим цвет при наведении */
+.row:hover .progressPending {
+    background-color: #ca8a04;
+}
+
+.row:hover .progressCompleted {
+    background-color: #16a34a;
+}
+
+.workshopBadge {
+    font-weight: 600;
+    color: #475569;
+    background: #f1f5f9;
+    padding: 2px 6px;
+    border-radius: 4px;
+    margin-right: 4px;
+}
+
+/* Стиль для плановой (второй) линии */
+.progressPlanned {
+    position: absolute;
+    height: 14px; /* Чуть тоньше основной */
+    top: 75%;     /* Сдвигаем вниз */
+    transform: translateY(-50%);
+    background: repeating-linear-gradient(
+        45deg,
+        #cbd5e1,
+        #cbd5e1 5px,
+        #94a3b8 5px,
+        #94a3b8 10px
+    ); /* Полосатая текстура */
+    opacity: 0.7;
+    border-radius: 4px;
+    z-index: 1; /* Под основной */
+    pointer-events: none;
+}
+
+/* Приподнимем основную полоску, если активна, чтобы было видно обе */
+.rowActive .progress {
+    top: 35%; 
+}

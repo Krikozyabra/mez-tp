@@ -1,0 +1,106 @@
+.orderCard {
+    background: #fff;
+    border-radius: 16px;
+    border: 1px solid #e2e8f0;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.orderHeader {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    cursor: pointer;
+}
+
+.titleBlock {
+    display: flex;
+    flex-direction: column;
+}
+
+.orderTitle {
+    font-size: 18px;
+    font-weight: 600;
+    color: #0f172a;
+}
+
+.operationsCount {
+    font-size: 13px;
+    color: #64748b;
+}
+
+.buttonGroup {
+    display: flex;
+    gap: 8px;
+}
+
+.primaryButton {
+    padding: 8px 12px;
+    border-radius: 10px;
+    border: none;
+    background: #22c55e;
+    color: #fff;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.secondaryButton {
+    padding: 8px 12px;
+    border-radius: 10px;
+    border: 1px solid #cbd5f5;
+    background: transparent;
+    color: #1d4ed8;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.operationsLayout {
+    display: flex;
+    flex-direction: column;
+}
+
+.operations {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.operationRow {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 14px;
+    border-radius: 12px;
+    background: #f8fafc;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.operationRowActive {
+    border-color: #93c5fd;
+    background: #e0f2fe;
+}
+
+.operationInfo {
+    display: flex;
+    flex-direction: column;
+}
+
+.operationName {
+    font-weight: 600;
+}
+
+.operationMeta {
+    font-size: 13px;
+    color: #64748b;
+}
+
+.timelinePane {
+    background: #f8fafc;
+    border-radius: 16px;
+    padding: 12px;
+    border: 1px dashed #cbd5f5;
+}
