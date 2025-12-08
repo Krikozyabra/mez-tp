@@ -1,0 +1,64 @@
+name: Deploy Django to Production
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+    types: [closed]
+
+jobs:
+  deploy:
+    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.merged == true)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up SSH
+        uses: webfactory/ssh-agent@v0.7.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Deploy to server
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'EOF'
+            set -e
+            
+            cd ~/mez-tp
+
+
+            if [ -f .env ]; then
+              cp .env .env.backup
+            fi
+            
+            if [ -f backend/.env ]; then
+              cp backend/.env backend/.env.backup
+            fi
+
+            git fetch origin
+            git reset --hard origin/master
+
+            git clean -fd -e "*.env" -e "backend/.env" -e ".env.backup" -e "backend/.env.backup" 2>/dev/null || true
+
+            if [ -f .env.backup ]; then
+              mv .env.backup .env
+            fi
+            
+            if [ -f backend/.env.backup ]; then
+              mv backend/.env.backup backend/.env
+            fi
+
+            docker-compose down
+            docker-compose up -d --build
+
+            docker-compose exec -T backend python manage.py migrate --noinput || echo "Миграции пропущены"
+
+            docker-compose exec -T backend python manage.py collectstatic --noinput || echo "Статика не собрана"
+
+            docker system prune -f
+
+            echo "Деплой успешно завершен!"
+            echo "Приложение доступно по адресу: http://${{ secrets.SSH_HOST }}:8000"
+          EOF
