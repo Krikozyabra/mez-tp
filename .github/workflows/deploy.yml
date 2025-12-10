@@ -51,6 +51,13 @@ jobs:
             fi
 
             docker-compose down
+
+            if [ -d "front" ]; then
+              echo "Собираем фронтенд..."
+              docker-compose build front-builder
+              docker-compose run --rm front-builder
+            fi
+
             docker-compose up -d --build
 
             docker-compose exec -T backend python manage.py migrate --noinput || echo "Миграции пропущены"
