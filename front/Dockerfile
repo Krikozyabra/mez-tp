@@ -9,4 +9,5 @@ RUN npm run build
 FROM alpine:latest
 RUN apk --no-cache add rsync
 WORKDIR /app
+
 COPY --from=builder /app/build ./build
