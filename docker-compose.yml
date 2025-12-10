@@ -33,11 +33,22 @@ services:
     volumes:
       - ./backend:/app
       - ./backend/static:/app/static
+      - ./front/dist:/app/static/front
     command: >
       sh -c "sleep 10 &&
              python manage.py migrate --noinput &&
              python manage.py collectstatic --noinput &&
              gunicorn mez.wsgi:application --bind 0.0.0.0:8000 --workers 3"
+    networks:
+      - app-network
+
+  front-builder:
+    build:
+      context: ./front
+      dockerfile: Dockerfile
+    volumes:
+      - ./front/dist:/app/dist
+    command: npm run build
     networks:
       - app-network
 
