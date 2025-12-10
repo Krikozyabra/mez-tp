@@ -1,4 +1,4 @@
-name: Deploy Django to Production
+name: Deploy Django + Frontend to Production
 
 on:
   push:
@@ -27,8 +27,8 @@ jobs:
             set -e
             
             cd ~/mez-tp
-
-
+            
+            # Бэкап env файлов
             if [ -f .env ]; then
               cp .env .env.backup
             fi
@@ -37,11 +37,14 @@ jobs:
               cp backend/.env backend/.env.backup
             fi
 
+            # Обновляем код
             git fetch origin
             git reset --hard origin/master
 
-            git clean -fd -e "*.env" -e "backend/.env" -e ".env.backup" -e "backend/.env.backup" 2>/dev/null || true
+            # Очищаем, сохраняя env файлы
+            git clean -fd -e "*.env" -e "backend/.env" -e ".env.backup" -e "backend/.env.backup" -e "frontend/.env*" 2>/dev/null || true
 
+            # Восстанавливаем env файлы
             if [ -f .env.backup ]; then
               mv .env.backup .env
             fi
@@ -50,22 +53,39 @@ jobs:
               mv backend/.env.backup backend/.env
             fi
 
-            docker-compose down
+            # Останавливаем все сервисы
+            docker-compose down || true
 
-            if [ -d "front" ]; then
-              echo "Собираем фронтенд..."
-              docker-compose build front-builder
-              docker-compose run --rm front-builder
-            fi
 
+            # Вместо этого просто собираем и запускаем все сервисы
+            echo "Собираем и запускаем все сервисы..."
             docker-compose up -d --build
 
-            docker-compose exec -T backend python manage.py migrate --noinput || echo "Миграции пропущены"
+            # Ждем запуска
+            sleep 15
 
+            # Проверяем статус контейнеров
+            echo "Проверка статуса контейнеров:"
+            docker-compose ps
+
+            # Выполняем миграции и сбор статики
+            echo "Выполняем миграции базы данных..."
+            docker-compose exec -T backend python manage.py migrate --noinput || echo "Миграции пропущены"
+            
+            echo "Собираем статические файлы..."
             docker-compose exec -T backend python manage.py collectstatic --noinput || echo "Статика не собрана"
 
+            # Очистка
             docker system prune -f
 
-            echo "Деплой успешно завершен!"
-            echo "Приложение доступно по адресу: http://${{ secrets.SSH_HOST }}:8000"
+            echo "========================================"
+            echo "🎉 Деплой успешно завершен!"
+            echo "🔗 Frontend: http://${{ secrets.SSH_HOST }}"
+            echo "🔗 Backend API: http://${{ secrets.SSH_HOST }}:8000"
+            echo "🔗 Admin: http://${{ secrets.SSH_HOST }}:8000/admin"
+            echo ""
+            echo "Проверьте логи:"
+            echo "  docker-compose logs frontend"
+            echo "  docker-compose logs backend"
+            echo "========================================"
           EOF
