@@ -42,7 +42,7 @@ jobs:
             git reset --hard origin/master
 
             # Очищаем, сохраняя env файлы
-            git clean -fd -e "*.env" -e "backend/.env" -e ".env.backup" -e "backend/.env.backup" -e "frontend/.env*" 2>/dev/null || true
+            git clean -fd -e "*.env" -e "backend/.env" -e ".env.backup" -e "backend/.env.backup" -e "front/.env*" -e "frontend/.env*" 2>/dev/null || true
 
             # Восстанавливаем env файлы
             if [ -f .env.backup ]; then
@@ -57,35 +57,33 @@ jobs:
             docker-compose down || true
 
 
-            # Вместо этого просто собираем и запускаем все сервисы
+            # Просто собираем и запускаем все сервисы
             echo "Собираем и запускаем все сервисы..."
             docker-compose up -d --build
 
             # Ждем запуска
             sleep 15
 
-            # Проверяем статус контейнеров
-            echo "Проверка статуса контейнеров:"
-            docker-compose ps
-
             # Выполняем миграции и сбор статики
-            echo "Выполняем миграции базы данных..."
             docker-compose exec -T backend python manage.py migrate --noinput || echo "Миграции пропущены"
-            
-            echo "Собираем статические файлы..."
             docker-compose exec -T backend python manage.py collectstatic --noinput || echo "Статика не собрана"
 
             # Очистка
             docker system prune -f
 
             echo "========================================"
-            echo "🎉 Деплой успешно завершен!"
-            echo "🔗 Frontend: http://${{ secrets.SSH_HOST }}"
-            echo "🔗 Backend API: http://${{ secrets.SSH_HOST }}:8000"
-            echo "🔗 Admin: http://${{ secrets.SSH_HOST }}:8000/admin"
-            echo ""
-            echo "Проверьте логи:"
-            echo "  docker-compose logs frontend"
-            echo "  docker-compose logs backend"
+            echo " Деплой успешно завершен!"
+            echo " Backend API: http://${{ secrets.SSH_HOST }}:8000"
+            echo " Admin: http://${{ secrets.SSH_HOST }}:8000/admin"
+            
+            # Проверяем, запущен ли фронтенд
+            if docker-compose ps | grep -q "frontend"; then
+              echo " Frontend: http://${{ secrets.SSH_HOST }}"
+            elif docker-compose ps | grep -q "front"; then
+              echo " Frontend: http://${{ secrets.SSH_HOST }}"
+            else
+              echo "  Frontend не запущен"
+            fi
+            
             echo "========================================"
           EOF
