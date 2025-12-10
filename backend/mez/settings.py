@@ -11,7 +11,19 @@ SECRET_KEY = os.environ.get("SECRET_KEY", "django-insecure-test-key-for-dev")
 
 DEBUG = os.environ.get("DEBUG", "False").lower() == "true"
 
-ALLOWED_HOSTS = os.environ.get("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
+DEBUG = False
+SECURE_SSL_REDIRECT = True
+SESSION_COOKIE_SECURE = True
+CSRF_COOKIE_SECURE = True
+
+ALLOWED_HOSTS = [
+    "localhost",
+    "127.0.0.1",
+    "mez-tp.sytes.net",
+    "www.mez-tp.sytes.net",
+    "77.110.101.12",
+]
+
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -94,13 +106,16 @@ DATETIME_FORMAT = "d.m.Y H:i"
 TIME_FORMAT = "H:i"
 
 STATIC_URL = "static/"
-STATIC_ROOT = os.path.join(BASE_DIR, "static")
-STATICFILES_DIRS = [BASE_DIR / 'static']
 
-MEDIA_URL = '/media/'
-MEDIA_ROOT = BASE_DIR / 'media'
+STATIC_ROOT = os.path.join(BASE_DIR, "staticfiles")
+STATICFILES_DIRS = [
+    os.path.join(BASE_DIR, "static"),
+]
 
-AUTH_USER_MODEL = 'api.CustomUser'
+MEDIA_URL = "/media/"
+MEDIA_ROOT = BASE_DIR / "media"
+
+AUTH_USER_MODEL = "api.CustomUser"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
@@ -117,12 +132,8 @@ REST_FRAMEWORK = {
 
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 USE_X_FORWARDED_HOST = True
-SECURE_SSL_REDIRECT = False
 CSRF_TRUSTED_ORIGINS = [
     "https://mez-tp.sytes.net",
     "https://www.mez-tp.sytes.net",
     "https://77.110.101.12",
 ]
-
-SESSION_COOKIE_SECURE = True
-CSRF_COOKIE_SECURE = True
