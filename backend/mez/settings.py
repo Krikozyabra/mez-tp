@@ -11,7 +11,6 @@ SECRET_KEY = os.environ.get("SECRET_KEY", "django-insecure-test-key-for-dev")
 
 DEBUG = os.environ.get("DEBUG", "False").lower() == "true"
 
-DEBUG = False
 SECURE_SSL_REDIRECT = True
 SESSION_COOKIE_SECURE = True
 CSRF_COOKIE_SECURE = True
@@ -119,7 +118,12 @@ AUTH_USER_MODEL = "api.CustomUser"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOWED_ORIGINS = [
+    "https://mez-tp.sytes.net",
+    "http://mez-tp.sytes.net",
+]
+
+CORS_ALLOW_CREDENTIALS = True
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
