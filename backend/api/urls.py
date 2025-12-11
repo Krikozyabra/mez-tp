@@ -15,12 +15,13 @@ from .views.operation_views import (
 )
 from .views.workshop_views import AssemblyShopAPIList, AssemblyShopAPIUpdate
 from .views.executor_views import ExecutorAPIList, ExecutorAPIUpdate, ExecutorAPIListByWorkshop
-from .views.user_views import MasterListAPIView
+from .views.user_views import MasterListAPIView, CurrentUserView
 
 urlpatterns = [
     # Auth
     path('auth/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('auth/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    path('auth/users/me/', CurrentUserView.as_view()),
 
     # Orders (Множественное число)
     path('orders/', OrderAPIList.as_view()),

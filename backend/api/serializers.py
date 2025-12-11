@@ -26,7 +26,7 @@ class MasterSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ['id', 'username', 'first_name', 'last_name', 'full_name']
+        fields = ['id', 'username', 'first_name', 'last_name', 'full_name', 'role']
 
     def get_full_name(self, obj):
         return f"{obj.last_name} {obj.first_name}".strip() or obj.username

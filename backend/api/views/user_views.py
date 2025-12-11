@@ -12,3 +12,11 @@ class MasterListAPIView(generics.ListAPIView):
     def get_queryset(self):
         # Возвращаем пользователей с ролью 'master'
         return User.objects.filter(role='master')
+    
+class CurrentUserView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        serializer = MasterSerializer(request.user) # MasterSerializer содержит поле role?
+        # Если нет, используйте UserSerializer из djoser или кастомный, где есть поле 'role'
+        return Response(serializer.data)
