@@ -1,9 +1,19 @@
 export const formatDateInputValue = (date) => {
     if (!date) return '';
-    if (typeof date === 'string') {
-        return date.split(' ')[0].split('T')[0];
+    // Если уже строка YYYY-MM-DD
+    if (typeof date === 'string' && date.match(/^\d{4}-\d{2}-\d{2}$/)) {
+        return date;
     }
-    return date.toISOString().split('T')[0];
+    // Если ISO строка
+    if (typeof date === 'string') {
+        return date.split('T')[0];
+    }
+    // Если объект Date
+    try {
+        return date.toISOString().split('T')[0];
+    } catch (e) {
+        return '';
+    }
 };
 
 export const addDays = (date, days) => {

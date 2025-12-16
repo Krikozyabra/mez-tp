@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { formatDateInputValue, addDays, addMinutes } from '../utils/dateUtils';
-import { api } from '../api/api';
 
 export const useOrderOperations = (initialOperations = []) => {
     const [operations, setOperations] = useState(initialOperations);
@@ -8,26 +7,26 @@ export const useOrderOperations = (initialOperations = []) => {
     const addOperation = () => {
         const today = new Date();
         const lastOperation = operations[operations.length - 1];
+        
+        // Авто-даты: следующий день после последней операции
         const startDate = lastOperation 
-            ? formatDateInputValue(addDays(new Date(lastOperation.endDate), 1))
+            ? formatDateInputValue(addDays(new Date(lastOperation.endDate), 0))
             : formatDateInputValue(today);
         const endDate = lastOperation
-            ? formatDateInputValue(addDays(new Date(lastOperation.endDate), 4))
-            : formatDateInputValue(addDays(today, 3));
+            ? formatDateInputValue(addDays(new Date(lastOperation.endDate), 1))
+            : formatDateInputValue(addDays(today, 1));
 
         const newOperation = {
             id: crypto.randomUUID(),
-            name: '',
+            name: `Операция ${operations.length + 1}`,
             description: '',
             workshopId: '',
             performerIds: [],
-            priority: 2,
+            masterId: '',
             startDate,
             endDate,
             durationMinutes: 0,
-            needsControl: false,
-            masterId: '',
-            assignedTo: 'technolog',
+            // priority убран
         };
         setOperations(prev => [...prev, newOperation]);
     };
@@ -36,20 +35,19 @@ export const useOrderOperations = (initialOperations = []) => {
         setOperations(prev => prev.filter(op => op.id !== id));
     };
 
-    const updateOperation = async (operationId, field, value) => {
-        // Синхронное обновление стейта
+    const updateOperation = (operationId, field, value) => {
         setOperations(prev => prev.map(op => {
             if (op.id !== operationId) return op;
 
             let processedValue = value;
-            if (field === 'priority' || field === 'durationMinutes') {
+            if (field === 'durationMinutes') {
                 processedValue = parseInt(value) || 0;
             }
 
             const updated = { ...op, [field]: processedValue };
 
-            // Логика пересчета дат/минут
-            if (field === 'endDate' && updated.startDate && updated.endDate) {
+            // Пересчет длительности
+            if ((field === 'endDate' || field === 'startDate') && updated.startDate && updated.endDate) {
                 const start = new Date(updated.startDate);
                 const end = new Date(updated.endDate);
                 if (end > start) {
@@ -60,6 +58,7 @@ export const useOrderOperations = (initialOperations = []) => {
                 }
             }
 
+            // Пересчет даты конца по минутам
             if (field === 'durationMinutes' && updated.startDate) {
                 const start = new Date(updated.startDate);
                 const end = addMinutes(start, processedValue);
@@ -68,32 +67,6 @@ export const useOrderOperations = (initialOperations = []) => {
 
             return updated;
         }));
-
-        // Асинхронная логика (запрос последней даты)
-        if (field === 'workshopId' && value) {
-            try {
-                const data = await api.operations.getLastInShop(value);
-                if (data && data.actual_planned_end) {
-                    const newStartDate = formatDateInputValue(data.actual_planned_end);
-                    
-                    setOperations(prev => prev.map(op => {
-                        if (op.id !== operationId) return op;
-                        
-                        const updated = { ...op, startDate: newStartDate };
-                        if (op.durationMinutes > 0) {
-                            const start = new Date(newStartDate);
-                            const end = addMinutes(start, op.durationMinutes);
-                            updated.endDate = formatDateInputValue(end);
-                        } else {
-                            updated.endDate = newStartDate;
-                        }
-                        return updated;
-                    }));
-                }
-            } catch (error) {
-                console.error("Failed to fetch last operation date", error);
-            }
-        }
     };
 
     const togglePerformer = (operationId, performerId) => {
@@ -113,7 +86,7 @@ export const useOrderOperations = (initialOperations = []) => {
 
     return {
         operations,
-        setOperations, // Для полной замены если нужно
+        setOperations,
         addOperation,
         removeOperation,
         updateOperation,

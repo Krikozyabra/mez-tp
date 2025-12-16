@@ -1,17 +1,14 @@
 from django.urls import path
 from rest_framework_simplejwt.views import (
-    TokenObtainPairView,
-    TokenRefreshView
+TokenObtainPairView,
+TokenRefreshView
 )
-
-from .views.order_views import OrderAPIList, OrderAPIUpdate
+from .views.order_views import OrderListCreateAPIView, OrderDetailUpdateDeleteAPIView
 from .views.operation_views import (
-    OperationAPIList, 
-    OperationAPIUpdate,
-    OperationAPIGetLast,
-    OperationAPIGetByOrder,
-    OperationAPISetCompleted,
-    OperationAPIGetFirst
+    OperationListCreateAPIView,
+    OperationDetailUpdateDeleteAPIView,
+    OperationStartAPIView,
+    OperationEndAPIView
 )
 from .views.workshop_views import AssemblyShopAPIList, AssemblyShopAPIUpdate
 from .views.executor_views import ExecutorAPIList, ExecutorAPIUpdate, ExecutorAPIListByWorkshop
@@ -23,32 +20,27 @@ urlpatterns = [
     path('auth/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('auth/users/me/', CurrentUserView.as_view()),
 
-    # Orders (Множественное число)
-    path('orders/', OrderAPIList.as_view()),
-    path('orders/<int:pk>/', OrderAPIUpdate.as_view()),
+    # Orders
+    path('order/', OrderListCreateAPIView.as_view()),
+    path('order/<int:pk>/', OrderDetailUpdateDeleteAPIView.as_view()),
 
-    # Operations (Множественное число)
-    path('operations/', OperationAPIList.as_view()),
-    path('operations/<int:pk>/', OperationAPIUpdate.as_view()),
-    
-    # Custom Operation Actions
-    path('operations/last-in-shop/<int:assembly_shop_pk>/', OperationAPIGetLast.as_view()),
-    path('operations/by-order/<int:order_pk>/', OperationAPIGetByOrder.as_view()),
-    path('operations/complete/<int:pk>/', OperationAPISetCompleted.as_view()),
-    
-    # Исправлено: привели к единому виду get-first (как на фронте) или first. 
-    # Давайте использовать 'first', но поправим фронт под это.
-    path('operations/first/', OperationAPIGetFirst.as_view()),
-    
-    # Workshops
+    # Operations
+    path('operation/', OperationListCreateAPIView.as_view()),
+    path('operation/<int:pk>/', OperationDetailUpdateDeleteAPIView.as_view()),
+
+    # Operation Actions
+    path('operation/<int:pk>/start/', OperationStartAPIView.as_view()),
+    path('operation/<int:pk>/end/', OperationEndAPIView.as_view()),
+
+    # Workshops (Старые Views оставлены, если они нужны для справочников)
     path('workshops/', AssemblyShopAPIList.as_view()),
     path('workshops/<int:pk>/', AssemblyShopAPIUpdate.as_view()),
-    
+
     # Executors
     path('executors/', ExecutorAPIList.as_view()),
     path('executors/<int:pk>/', ExecutorAPIUpdate.as_view()),
     path('executors/by-workshop/<int:workshop_pk>/', ExecutorAPIListByWorkshop.as_view()),
-    
-    # Пользователи / Мастера
+
+    # Masters
     path('masters/', MasterListAPIView.as_view()),
 ]

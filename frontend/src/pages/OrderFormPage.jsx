@@ -1,24 +1,24 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { api } from '../api/api';
 import { useOrderOperations } from '../hooks/useOrderOperations';
-import { mapOrderToBackend, mapOperationToBackend, mapBackendDetailToForm } from '../utils/mappers';
+import { mapOperationToBackend, mapBackendDetailToForm } from '../utils/mappers';
 import OperationCard from '../components/OperationCard';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
 import styles from './OrderFormPage.module.css';
 
-const OrderFormPage = ({ order, onSave, onCancel, onDelete }) => {
+const OrderFormPage = ({ order, onSave, onCancel, onDelete, focusOperationId }) => {
     const isEditMode = !!order;
+    
     const [orderTitle, setOrderTitle] = useState(order?.title || '');
     const [orderDescription, setOrderDescription] = useState(order?.description || '');
-    
-    // --- Состояния для справочников ---
-    const [workshops, setWorkshops] = useState([]);
-    const [executorsByWorkshop, setExecutorsByWorkshop] = useState({});
-    const [isLoadingRefs, setIsLoadingRefs] = useState(true);
-    const [isSaving, setIsSaving] = useState(false);
-    const [mastersList, setMastersList] = useState([]);
+    const [orderDeadline, setOrderDeadline] = useState(order?.deadline || '');
+    const [defaultMasterId, setDefaultMasterId] = useState(order?.defaultMasterId || '');
 
-    // --- Состояния для модальных окон ---
+    const [mastersList, setMastersList] = useState([]);
+    const [isSaving, setIsSaving] = useState(false);
+    
+    const [originalOperations, setOriginalOperations] = useState([]);
+
     const [isOpDeleteModalOpen, setIsOpDeleteModalOpen] = useState(false);
     const [isOrderDeleteModalOpen, setIsOrderDeleteModalOpen] = useState(false);
     const [operationToDelete, setOperationToDelete] = useState(null);
@@ -29,86 +29,80 @@ const OrderFormPage = ({ order, onSave, onCancel, onDelete }) => {
         addOperation, 
         removeOperation, 
         updateOperation,
-        togglePerformer
-    } = useOrderOperations(order?.operations);
+    } = useOrderOperations(order?.operations || []);
 
-    // --- ЗАГРУЗКА ИСПОЛНИТЕЛЕЙ ---
-    const fetchExecutorsForWorkshop = useCallback(async (workshopId) => {
-        if (!workshopId) return;
-        if (executorsByWorkshop[workshopId]) return;
-
-        try {
-            const data = await api.refs.getExecutorsByWorkshop(workshopId);
-            setExecutorsByWorkshop(prev => ({
-                ...prev,
-                [workshopId]: data || []
-            }));
-        } catch (error) {
-            console.error(`Error loading executors for workshop ${workshopId}`, error);
-        }
-    }, [executorsByWorkshop]);
-
-    // --- ПЕРВОНАЧАЛЬНАЯ ЗАГРУЗКА ---
+    // --- 1. ОБРАБОТКА НАЖАТИЯ ESC ---
     useEffect(() => {
-        const initData = async () => {
-            setIsLoadingRefs(true);
-            try {
-                const [workshopsData, mastersData] = await Promise.all([
-                    api.refs.getWorkshops(),
-                    api.refs.getMasters() // Запрос мастеров
-                ]);
-
-                setWorkshops(workshopsData?.results || []); // Сохраняем
-                setMastersList(mastersData?.results || []); // Сохраняем
-
-                const uniqueWorkshopIds = [...new Set(operations
-                    .map(op => op.workshopId)
-                    .filter(id => id)
-                )];
-                
-                await Promise.all(uniqueWorkshopIds.map(id => fetchExecutorsForWorkshop(id)));
-            } catch (err) {
-                console.error("Ref loading error", err);
-            } finally {
-                setIsLoadingRefs(false);
+        const handleKeyDown = (e) => {
+            if (e.key === 'Escape') {
+                onCancel();
             }
         };
-        initData();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []); 
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [onCancel]);
 
-    // --- ОБРАБОТЧИК ИЗМЕНЕНИЙ ---
-    const handleOperationChange = async (opId, field, value) => {
-        updateOperation(opId, field, value);
-        
-        if (field === 'workshopId' && value) {
-            fetchExecutorsForWorkshop(value);
-            updateOperation(opId, 'performerIds', []); 
-
-            // 5) АВТОМАТИЧЕСКИЙ ПРИОРИТЕТ
-            try {
-                // Используем существующий метод API
-                const lastOpData = await api.operations.getLastInShop(value);
+    // --- СИНХРОНИЗАЦИЯ ---
+    useEffect(() => {
+        if (order) {
+            setOrderTitle(order.title || '');
+            setOrderDescription(order.description || '');
+            setOrderDeadline(order.deadline || '');
+            setDefaultMasterId(order.defaultMasterId ? String(order.defaultMasterId) : '');
+            
+            if (order.operations) {
+                // 1. Создаем глубокую копию для сравнения изменений
+                setOriginalOperations(JSON.parse(JSON.stringify(order.operations)));
                 
-                // Если есть последняя операция, берем её приоритет + 1
-                // Если цех пустой (data === null), ставим приоритет 1
-                const newPriority = lastOpData ? (parseInt(lastOpData.priority) + 1) : 1;
-                
-                updateOperation(opId, 'priority', newPriority);
-            } catch (e) {
-                console.error("Auto priority error", e);
-                // Фоллбэк на 1
-                updateOperation(opId, 'priority', 1);
+                // 2. !!! ОБНОВЛЯЕМ ТЕКУЩИЙ СТЕЙТ ОПЕРАЦИЙ !!!
+                // Это гарантирует, что previousOperationId, рассчитанный в mappers.js,
+                // попадет в список operations и отобразится в select.
+                setOperations(order.operations);
             }
         }
+    }, [order, setOperations]);
+
+    // --- Загрузка мастеров ---
+    useEffect(() => {
+        const loadMasters = async () => {
+            try {
+                const data = await api.refs.getMasters();
+                setMastersList(data?.results || []);
+            } catch (err) { console.error(err); } 
+        };
+        loadMasters();
+    }, []);
+
+    // ... (Скролл и обработчики без изменений) ...
+    const itemsRef = useRef(new Map());
+    const hasScrolledRef = useRef(false);
+    useEffect(() => { hasScrolledRef.current = false; }, [focusOperationId]);
+    useEffect(() => {
+        if (focusOperationId && operations.length > 0 && !hasScrolledRef.current) {
+            const node = itemsRef.current.get(focusOperationId);
+            if (node) {
+                hasScrolledRef.current = true;
+                setTimeout(() => {
+                    node.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    node.style.boxShadow = '0 0 0 2px #3b82f6, 0 0 15px rgba(59, 130, 246, 0.3)';
+                    node.style.transition = 'box-shadow 0.5s';
+                    setTimeout(() => node.style.boxShadow = 'none', 2000);
+                }, 100);
+            }
+        }
+    }, [focusOperationId, operations]);
+
+    const handleOperationChange = async (opId, field, value) => {
+        updateOperation(opId, field, value);
     };
 
-    // --- ЛОГИКА УДАЛЕНИЯ ---
-    const handleInitiateOpDelete = (op) => {
-        setOperationToDelete(op);
-        setIsOpDeleteModalOpen(true);
+    const checkIsDirty = (currentOp) => {
+        const original = originalOperations.find(op => op.id === currentOp.id);
+        if (!original) return true;
+        return JSON.stringify(currentOp) !== JSON.stringify(original);
     };
 
+    const handleInitiateOpDelete = (op) => { setOperationToDelete(op); setIsOpDeleteModalOpen(true); };
     const handleConfirmOpDelete = async () => {
         if (!operationToDelete) return;
         const isLocal = typeof operationToDelete.id === 'string' && operationToDelete.id.length > 20;
@@ -117,103 +111,180 @@ const OrderFormPage = ({ order, onSave, onCancel, onDelete }) => {
             catch (error) { console.error(error); alert('Ошибка удаления'); return; }
         }
         removeOperation(operationToDelete.id);
-        setIsOpDeleteModalOpen(false);
-        setOperationToDelete(null);
+        setIsOpDeleteModalOpen(false); setOperationToDelete(null);
     };
-
     const handleInitiateOrderDelete = () => setIsOrderDeleteModalOpen(true);
-
     const handleConfirmOrderDelete = async () => {
         if (!order?.id) return;
-        try {
-            await api.orders.delete(order.id);
-            if (onDelete) onDelete();
-        } catch (error) {
-            console.error(error); alert('Ошибка удаления заказа');
-        } finally {
-            setIsOrderDeleteModalOpen(false);
-        }
+        try { await api.orders.delete(order.id); if (onDelete) onDelete(); } 
+        catch (error) { console.error(error); alert('Ошибка удаления'); } 
+        finally { setIsOrderDeleteModalOpen(false); }
     };
 
-    // --- ЛОГИКА СОХРАНЕНИЯ ОДНОЙ ОПЕРАЦИИ (ИСПРАВЛЕНО) ---
+    // --- ОДИНОЧНОЕ СОХРАНЕНИЕ ---
     const handleSaveSingleOperation = async (operation) => {
-        // 1. Валидация
-        if (!operation.name.trim()) return alert('Введите название операции');
-        if (!operation.workshopId) return alert('Выберите цех');
+        if (!operation.name.trim()) return alert('Введите название');
         if (!operation.startDate || !operation.endDate) return alert('Заполните даты');
 
-        // 2. Проверка ID заказа
         let orderId = order?.id;
-        // Если ID длинный (UUID), значит заказ еще не сохранен на бэкенде
         const isNewOrderOnBackend = typeof orderId === 'string' && orderId.length > 20;
+        if (isNewOrderOnBackend) return alert('Сначала сохраните заказ целиком.');
+
+        // --- ЛОГИКА ПРОВЕРКИ ЗАВИСИМОСТЕЙ ---
+        let changedDependenciesCount = 0;
         
-        if (isNewOrderOnBackend) {
-             alert('Сначала сохраните сам заказ (кнопка внизу), чтобы создать его в системе.');
-             return;
+        operations.forEach(op => {
+            const original = originalOperations.find(orig => orig.id === op.id);
+            // Проверяем, изменилось ли поле previousOperationId
+            // Сравниваем строки, чтобы избежать проблем с типами
+            const oldPrev = original ? String(original.previousOperationId || '') : '';
+            const newPrev = String(op.previousOperationId || '');
+            
+            if (oldPrev !== newPrev) {
+                changedDependenciesCount++;
+            }
+        });
+
+        // Если изменено более одной связи, запрещаем одиночное сохранение
+        if (changedDependenciesCount > 1) {
+            alert("Вы изменили связи (поле 'Зависит от') у нескольких операций.\n\nПожалуйста, используйте кнопку 'Сохранить всё' (вверху страницы), чтобы корректно обновить структуру заказа.");
+            return;
         }
+        // -------------------------------------
 
         try {
-            const payload = mapOperationToBackend(operation, orderId);
-            
-            // 3. Проверка: новая операция или обновление?
+            const idx = operations.findIndex(op => op.id === operation.id);
+            const payload = mapOperationToBackend(operation, orderId, idx);
             const isOpNew = typeof operation.id === 'string' && operation.id.length > 20;
             
-            let savedOpData;
-            if (isOpNew) {
-                savedOpData = await api.operations.create(payload);
-            } else {
-                savedOpData = await api.operations.update(operation.id, payload);
+            const savedOpData = isOpNew 
+                ? await api.operations.create(payload) 
+                : await api.operations.update(operation.id, payload);
+
+            const updatedOp = { ...operation, id: savedOpData.id };
+            
+            // Если у текущей операции изменилась зависимость, нужно обновить связь на бэкенде
+            // (Так как mapOperationToBackend посылает next_operation: null)
+            // Это сложный момент для одиночного сохранения. 
+            // Если зависимость была изменена ТОЛЬКО у этой операции, попробуем обновить связь.
+            const originalOp = originalOperations.find(o => o.id === operation.id);
+            const oldPrev = originalOp ? String(originalOp.previousOperationId || '') : '';
+            const newPrev = String(operation.previousOperationId || '');
+
+            if (oldPrev !== newPrev && newPrev) {
+                 // Находим ту операцию, которая теперь должна ссылаться на эту (или наоборот).
+                 // Логика next_operation подразумевает: "Эта операция является следующей для..."
+                 // В нашей модели: OpA.next_operation = OpB (значит OpB зависит от OpA).
+                 // previousOperationId = ID OpA.
+                 // Значит нам нужно найти OpA (newPrev) и поставить ей next_operation = savedOpData.id
+                 
+                 // Простая попытка линковки для одиночного сохранения:
+                 await api.operations.update(newPrev, { next_operation: savedOpData.id });
             }
 
-            // 4. ВАЖНО: Обновляем локальный стейт (меняем UUID на реальный ID)
-            setOperations(prev => prev.map(op => {
-                if (op.id === operation.id) {
-                    // Если бэкенд возвращает полный объект, берем id оттуда
-                    // Если просто {id: ...}, берем так
-                    return { ...op, id: savedOpData.id || savedOpData.pk };
-                }
-                return op;
-            }));
-
-            alert('Операция успешно сохранена!');
-        } catch (e) {
-            console.error(e);
-            alert('Ошибка при сохранении операции. Проверьте консоль.');
-        }
+            setOperations(prev => prev.map(op => op.id === operation.id ? updatedOp : op));
+            setOriginalOperations(prev => {
+                const filtered = prev.filter(op => op.id !== operation.id);
+                return [...filtered, updatedOp];
+            });
+            alert('Операция сохранена!');
+        } catch (e) { console.error(e); alert('Ошибка сохранения: ' + e.message); }
     };
 
-    // --- ЛОГИКА МАССОВОГО СОХРАНЕНИЯ ---
+    // --- ГЛАВНОЕ СОХРАНЕНИЕ ---
     const persistData = async () => {
         if (!orderTitle.trim()) { alert('Введите название заказа'); return false; }
-        
+        if (!orderDeadline) { alert('Укажите Дедлайн заказа'); return false; }
+
         setIsSaving(true);
         try {
             let orderId = order?.id;
             const isNewOrderOnBackend = typeof orderId === 'string' && orderId.length > 20; 
 
+            // 1. Сохраняем Заказ
+            const orderPayload = {
+                title: orderTitle,
+                description: orderDescription,
+                deadline: orderDeadline,
+                defaultMasterId: defaultMasterId || null
+            };
+
             if (isNewOrderOnBackend) {
-                const createdOrder = await api.orders.create({ title: orderTitle, description: orderDescription });
+                const createdOrder = await api.orders.create(orderPayload);
                 orderId = createdOrder.id;
             } else {
-                await api.orders.update(orderId, { title: orderTitle, description: orderDescription });
+                await api.orders.update(orderId, orderPayload);
             }
 
-            const operationPromises = operations.map(op => {
-                const payload = mapOperationToBackend(op, orderId);
+            // 2. Сохраняем операции
+            const idMap = {}; 
+            const savedOperations = [];
+
+            const oldDefaultMaster = order?.defaultMasterId ? String(order.defaultMasterId) : '';
+            const newDefaultMaster = defaultMasterId ? String(defaultMasterId) : '';
+            const isMasterChanged = oldDefaultMaster !== newDefaultMaster;
+
+            for (let i = 0; i < operations.length; i++) {
+                const op = operations[i];
+                let payload = mapOperationToBackend(op, orderId, i);
+                
+                if (isMasterChanged || isNewOrderOnBackend) {
+                    if (defaultMasterId) {
+                        payload.master = parseInt(defaultMasterId);
+                        payload.needs_master_check = true;
+                    } else {
+                        payload.master = null;
+                        payload.needs_master_check = false;
+                    }
+                }
+                
                 const isOpNew = typeof op.id === 'string' && op.id.length > 20;
-                return isOpNew ? api.operations.create(payload) : api.operations.update(op.id, payload);
-            });
+                let savedOp;
+                if (isOpNew) {
+                    savedOp = await api.operations.create(payload);
+                } else {
+                    savedOp = await api.operations.update(op.id, payload);
+                }
+                
+                idMap[op.id] = savedOp.id;
+                
+                savedOperations.push({
+                    ...savedOp,
+                    _ui_previousOperationId: op.previousOperationId 
+                });
+            }
 
-            await Promise.all(operationPromises);
+            // 3. Линковка (Linked List)
+            // Сначала всем сбрасываем next_operation (чтобы избежать конфликтов unique), 
+            // если бы мы меняли порядок, но для упрощения просто перезаписываем.
+            // Но в идеале:
+            // 1. Проход: next_operation = null для всех
+            // 2. Проход: проставить правильные next_operation
+            
+            // Простой вариант (простановка):
+            for (const currentOp of savedOperations) {
+                const prevUiId = currentOp._ui_previousOperationId;
+                if (prevUiId) {
+                    const prevRealId = idMap[prevUiId] || prevUiId;
+                    if (prevRealId) {
+                        await api.operations.update(prevRealId, { 
+                            next_operation: currentOp.id 
+                        });
+                    }
+                }
+            }
 
+            // 4. Обновляем UI
             const updatedOrderData = await api.orders.getOne(orderId);
             const formFormat = mapBackendDetailToForm(updatedOrderData);
+            
             setOperations(formFormat.operations);
+            setOriginalOperations(JSON.parse(JSON.stringify(formFormat.operations)));
 
             return orderId;
         } catch (error) {
             console.error("Save error:", error);
-            alert("Ошибка сохранения.");
+            alert("Ошибка сохранения: " + error.message);
             return false;
         } finally {
             setIsSaving(false);
@@ -222,88 +293,92 @@ const OrderFormPage = ({ order, onSave, onCancel, onDelete }) => {
 
     const handleSaveOrderClick = async () => {
         const savedOrderId = await persistData();
-        if (savedOrderId) onSave({ id: savedOrderId });
+        if (savedOrderId) {
+            // === ИЗМЕНЕНИЕ: Не вызываем onSave(), чтобы не закрывать окно ===
+            // onSave({ id: savedOrderId }); 
+            alert('Заказ и все операции успешно сохранены!');
+        }
     };
 
     const handleAddOperationClick = async () => {
-        const savedOrderId = await persistData();
-        if (savedOrderId) addOperation();
+        if (typeof order?.id === 'string' && order.id.length > 20) {
+             const saved = await persistData();
+             if (saved) addOperation();
+        } else {
+            addOperation();
+        }
     };
 
     return (
         <div className={styles.page}>
             <div className={styles.container}>
                 <div className={styles.header}>
-                    <h1 className={styles.title}>{isEditMode ? 'Редактирование заказа' : 'Создание заказа'}</h1>
+                    <h1 className={styles.title}>{isEditMode ? 'Редактирование заказа' : 'Новый заказ'}</h1>
                     <div className={styles.headerActions}>
-                        <button className={styles.cancelButton} onClick={onCancel} disabled={isSaving}>
-                            Отмена
-                        </button>
-                        {isEditMode && (
-                            <button className={styles.deleteButton} onClick={handleInitiateOrderDelete} disabled={isSaving}>
-                                Удалить
-                            </button>
-                        )}
+                        <button className={styles.cancelButton} onClick={onCancel}>Закрыть (Esc)</button>
+                        {isEditMode && <button className={styles.deleteButton} onClick={handleInitiateOrderDelete}>Удалить</button>}
                         <button className={styles.saveButton} onClick={handleSaveOrderClick} disabled={isSaving}>
-                            {isSaving ? 'Сохранение...' : 'Сохранить заказ'}
+                            {isSaving ? 'Сохранение...' : 'Сохранить всё'}
                         </button>
                     </div>
                 </div>
 
                 <div className={styles.form}>
-                    <div className={styles.section}>
-                        <label className={styles.label}>Название заказа</label>
-                        <input className={styles.input} value={orderTitle} onChange={(e) => setOrderTitle(e.target.value)} />
+                    <div className={styles.fieldRow} style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px'}}>
+                        <div className={styles.section}>
+                            <label className={styles.label}>Название заказа <span style={{color: 'red'}}>*</span></label>
+                            <input className={styles.input} value={orderTitle} onChange={e => setOrderTitle(e.target.value)} />
+                        </div>
+                        <div className={styles.section}>
+                            <label className={styles.label}>Дедлайн <span style={{color: 'red'}}>*</span></label>
+                            <input type="date" className={styles.input} value={orderDeadline} onChange={e => setOrderDeadline(e.target.value)} />
+                        </div>
                     </div>
+                    
                     <div className={styles.section}>
                         <label className={styles.label}>Описание</label>
-                        <textarea className={styles.textarea} rows={4} value={orderDescription} onChange={(e) => setOrderDescription(e.target.value)} />
+                        <textarea className={styles.textarea} rows={2} value={orderDescription} onChange={e => setOrderDescription(e.target.value)} />
+                    </div>
+
+                    <div className={styles.section}>
+                         <label className={styles.label}>Мастер по умолчанию</label>
+                         <select className={styles.input} value={defaultMasterId} onChange={e => setDefaultMasterId(e.target.value)}>
+                            <option value="">-- Не назначен --</option>
+                            {mastersList.map(m => <option key={m.id} value={m.id}>{m.full_name || m.username}</option>)}
+                         </select>
                     </div>
 
                     <div className={styles.operationsSection}>
                         <div className={styles.sectionHeader}>
-                            <h2 className={styles.sectionTitle}>Операции</h2>
+                            <h2 className={styles.sectionTitle}>Технологический процесс</h2>
                             <button className={styles.addOperationButton} onClick={handleAddOperationClick} disabled={isSaving}>
-                                {isSaving ? 'Сохранение...' : '+ Добавить операцию'}
+                                + Добавить этап
                             </button>
                         </div>
                         
-                        {operations.length === 0 ? (
-                            <div className={styles.emptyState}>Нет операций.</div>
-                        ) : (
+                        {operations.length === 0 ? <div className={styles.emptyState}>Нет операций</div> : (
                             operations.map((op, idx) => (
-                                <OperationCard
-                                key={op.id}
-                                index={idx}
-                                operation={op}
-                                orderId={order?.id}
-                                workshops={workshops}
-                                executors={executorsByWorkshop[op.workshopId] || []}
-                                masters={mastersList} // <--- ПЕРЕДАЕМ МАСТЕРОВ
-                                onChange={handleOperationChange}
-                                onTogglePerformer={togglePerformer}
-                                onDeleteInitiate={handleInitiateOpDelete}
-                                onSaveSingle={handleSaveSingleOperation} 
-                            />
+                                <div key={op.id} ref={node => node ? itemsRef.current.set(op.id, node) : itemsRef.current.delete(op.id)} style={{ marginBottom: '16px' }}>
+                                    <OperationCard
+                                        index={idx}
+                                        operation={op}
+                                        orderId={order?.id}
+                                        masters={mastersList}
+                                        otherOperations={operations} 
+                                        onChange={handleOperationChange}
+                                        onDeleteInitiate={handleInitiateOpDelete}
+                                        onSaveSingle={(op) => handleSaveSingleOperation(op, idx)} 
+                                        isDirty={checkIsDirty(op)} 
+                                    />
+                                </div>
                             ))
                         )}
                     </div>
                 </div>
             </div>
-
-            <DeleteConfirmModal 
-                isOpen={isOpDeleteModalOpen}
-                itemName={operationToDelete?.name}
-                onConfirm={handleConfirmOpDelete}
-                onCancel={() => setIsOpDeleteModalOpen(false)}
-            />
-
-            <DeleteConfirmModal 
-                isOpen={isOrderDeleteModalOpen}
-                itemName={`заказ "${orderTitle}"`}
-                onConfirm={handleConfirmOrderDelete}
-                onCancel={() => setIsOrderDeleteModalOpen(false)}
-            />
+            
+            <DeleteConfirmModal isOpen={isOpDeleteModalOpen} itemName={operationToDelete?.name} onConfirm={handleConfirmOpDelete} onCancel={() => setIsOpDeleteModalOpen(false)} />
+            <DeleteConfirmModal isOpen={isOrderDeleteModalOpen} itemName={`заказ "${orderTitle}"`} onConfirm={handleConfirmOrderDelete} onCancel={() => setIsOrderDeleteModalOpen(false)} />
         </div>
     );
 };

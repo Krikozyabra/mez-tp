@@ -24,13 +24,21 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY")
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = bool(os.getenv("DEBUG", 'True'))
+DEBUG = os.getenv("DEBUG", "False").lower() == "true"
+USE_SQLITE = os.getenv("USE_SQLITE", "False").lower() == "true"
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "").split(",")
 
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",  # React/Vue dev server
     "http://127.0.0.1:3000",
+    "http://localhost",        # <--- Добавить
+    "http://127.0.0.1",
+]
+
+CSRF_TRUSTED_ORIGINS = [
+    "http://localhost",
+    "http://127.0.0.1",
 ]
 
 # Application definition
@@ -82,7 +90,7 @@ WSGI_APPLICATION = "mez.wsgi.application"
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
-if DEBUG:
+if USE_SQLITE:
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.sqlite3",
@@ -91,13 +99,13 @@ if DEBUG:
     }
 else:
     DATABASES = {
-        "default": {
-            "ENGINE": "django.db.backends.postgresql",
-            "NAME": os.getenv("DB_NAME", "mez_db"),
-            "USER": os.getenv("DB_USER", "mez_user"),
-            "PASSWORD": os.getenv("DB_PASSWORD", ""),
-            "HOST": os.getenv("DB_HOST", "localhost"),
-            "PORT": os.getenv("DB_PORT", "5432"),
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': os.getenv('DB_NAME'),
+            'USER': os.getenv('DB_USER'),
+            'PASSWORD': os.getenv('DB_PASSWORD'),
+            'HOST': os.getenv('DB_HOST'),
+            'PORT': os.getenv('DB_PORT'),
         }
     }
 
@@ -125,7 +133,6 @@ LANGUAGE_CODE = "ru-ru"
 TIME_ZONE = "Europe/Moscow"
 
 USE_I18N = True
-USE_L10N = True
 USE_TZ = True
 
 
@@ -134,9 +141,9 @@ DATETIME_FORMAT = "d.m.Y H:i"
 TIME_FORMAT = "H:i"
 
 
-STATIC_URL = '/static/'
-STATIC_ROOT = BASE_DIR / 'staticfiles'
-STATICFILES_DIRS = [BASE_DIR / 'static']
+STATIC_URL = '/django_static/'
+STATIC_ROOT = BASE_DIR / 'static'
+STATICFILES_DIRS = []
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'

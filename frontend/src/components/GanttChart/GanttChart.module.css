@@ -1,51 +1,6 @@
-.wrapper {
-    background: #fff;
-    border-radius: 16px;
-    border: 1px solid #e2e8f0;
-    padding: 16px;
-    min-height: 300px;
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-}
-
-.compact {
-  background: transparent;
-  border: none;
-  padding: 0;
-  min-height: auto;
-}
-
 .compactControls {
-  display: flex;
-  justify-content: flex-end;
-}
-
-.header {
     display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 16px;
-    flex-wrap: wrap;
-}
-
-.title {
-    font-size: 18px;
-    font-weight: 600;
-    color: #0f172a;
-}
-
-.meta {
-    color: #475569;
-    font-size: 14px;
-}
-
-.controls {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 14px;
-    color: #475569;
+    justify-content: flex-end;
 }
 
 .dateInput {
@@ -55,41 +10,59 @@
     font-size: 14px;
 }
 
-.timeline {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-}
-
 .scaleRow {
     display: flex;
     align-items: center;
-    gap: 12px;
+    /* Убираем gap здесь, чтобы контролировать отступ вручную */
+    gap: 0; 
 }
 
+/* === ВАЖНОЕ ИЗМЕНЕНИЕ: Ширина левой колонки === */
+/* Задаем переменную или жесткое значение, чтобы левая часть в хедере 
+   и левая часть в строке совпадали пиксель-в-пиксель */
 .scaleSpacer {
-    width: 304px;
+    width: 380px; /* Фиксированная ширина */
+    min-width: 380px;
     flex-shrink: 0;
+    /* Добавляем отступ справа, чтобы компенсировать отступ перед графиком */
+    padding-right: 12px; 
+    box-sizing: border-box;
 }
 
 .scale {
     display: grid;
-    gap: 8px;
+    /* !!! УБРАН GAP, КОТОРЫЙ ЛОМАЛ СЕТКУ !!! */
+    gap: 0; 
     text-align: center;
     flex: 1;
 }
 
 .scaleLabel {
-    writing-mode: vertical-rl;
-    transform: rotate(180deg);
     font-size: 12px;
-    color: #475569;
+    color: #64748b;
+    
+    display: flex;
+    align-items: center;
+    justify-content: flex-end; /* Прижимаем к низу (к графику) */
+    
+    writing-mode: vertical-rl; 
+    transform: rotate(180deg);
+    
+    width: 100%;
+    height: 100%; 
+    padding-bottom: 8px;
+    user-select: none;
+    box-sizing: border-box;
+    
+    /* Опционально: можно добавить легкую сетку в хедер */
+    /* border-left: 1px dashed #e2e8f0; */
 }
 
 .row {
     display: flex;
     align-items: center;
-    gap: 12px;
+    /* Убираем gap, отступы регулируем внутри leftColumn */
+    gap: 0; 
     padding: 8px;
     border-radius: 12px;
     cursor: pointer;
@@ -100,27 +73,40 @@
     background: #f8fafc;
 }
 
-.rowActive {
-    background: #e0f2fe;
-    border: 1px solid #93c5fd;
+.leftColumn {
+    width: 380px; /* Должно совпадать с .scaleSpacer */
+    min-width: 380px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 12px; /* Расстояние между текстом и кнопкой */
+    padding-right: 12px; /* Отступ от самого графика */
+    box-sizing: border-box;
 }
 
 .operationInfo {
     display: flex;
     flex-direction: column;
-    min-width: 200px;
     gap: 4px;
+    flex: 1; /* Занимает все свободное место до кнопки */
+    min-width: 0; /* Разрешает сжатие текста ... */
 }
 
 .operationName {
     font-weight: 600;
     color: #0f172a;
     font-size: 14px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .operationMeta {
     font-size: 12px;
     color: #64748b;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .editButton {
@@ -164,20 +150,14 @@
     transition: background-color 0.2s ease;
 }
 
-.rowActive .operationName {
-    color: #2563eb;
-}
-
-/* Цвета для статусов */
 .progressPending {
-    background-color: #eab308; /* Желтый */
+    background-color: #eab308;
 }
 
 .progressCompleted {
-    background-color: #22c55e; /* Зеленый */
+    background-color: #22c55e;
 }
 
-/* Опционально: изменим цвет при наведении */
 .row:hover .progressPending {
     background-color: #ca8a04;
 }
@@ -195,11 +175,10 @@
     margin-right: 4px;
 }
 
-/* Стиль для плановой (второй) линии */
 .progressPlanned {
     position: absolute;
-    height: 14px; /* Чуть тоньше основной */
-    top: 75%;     /* Сдвигаем вниз */
+    height: 14px;
+    top: 75%;
     transform: translateY(-50%);
     background: repeating-linear-gradient(
         45deg,
@@ -207,14 +186,293 @@
         #cbd5e1 5px,
         #94a3b8 5px,
         #94a3b8 10px
-    ); /* Полосатая текстура */
+    );
     opacity: 0.7;
     border-radius: 4px;
-    z-index: 1; /* Под основной */
+    z-index: 1;
     pointer-events: none;
 }
 
-/* Приподнимем основную полоску, если активна, чтобы было видно обе */
-.rowActive .progress {
-    top: 35%; 
+/* Переменные для синхронизации высот */
+.wrapper {
+    --header-height: 40px;
+    --row-height: 44px;
+    --sidebar-width: 280px; /* Ширина левой колонки */
+
+    background: #fff;
+    border-radius: 16px;
+    border: 1px solid #e2e8f0;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    /* Важно: ограничиваем ширину контейнера, чтобы он не вылезал за экран */
+    max-width: 100%; 
+    box-sizing: border-box;
 }
+
+.compact {
+    border: none;
+    padding: 0;
+    background: transparent;
+}
+
+.actionBtn:hover {
+    opacity: 0.8;
+}
+
+/* Кнопка Старт */
+.startBtn {
+    background-color: #22c55e;
+    color: white;
+}
+
+.startBtn:hover {
+    background-color: #16a34a;
+}
+
+/* Кнопка Стоп */
+.finishBtn {
+    background-color: #ef4444;
+    color: white;
+    font-size: 16px; /* Квадратик стоп чуть крупнее визуально */
+}
+
+.finishBtn:hover {
+    background-color: #dc2626;
+}
+
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.title {
+    font-size: 18px;
+    font-weight: 700;
+    color: #0f172a;
+}
+
+/* === ГЛАВНЫЙ КОНТЕЙНЕР === */
+.chartContainer {
+    display: flex;
+    flex-direction: row;
+    width: 100%;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    background: #fff;
+    overflow: hidden; /* Скругляем углы */
+}
+
+/* === ЛЕВАЯ КОЛОНКА (Фиксированная) === */
+.leftPanel {
+    width: var(--sidebar-width);
+    min-width: var(--sidebar-width); /* Жестко фиксируем */
+    flex-shrink: 0;
+    background: #fff;
+    border-right: 1px solid #e2e8f0;
+    z-index: 20; /* Поверх скролла, если что */
+    display: flex;
+    flex-direction: column;
+}
+
+.leftPanelHeader {
+    height: var(--header-height);
+    background: #f8fafc;
+    border-bottom: 1px solid #e2e8f0;
+    display: flex;
+    align-items: center;
+    padding-left: 16px;
+    font-weight: 600;
+    font-size: 13px;
+    color: #475569;
+    box-sizing: border-box;
+}
+
+.leftPanelBody {
+    display: flex;
+    flex-direction: column;
+}
+
+.opNameRow {
+    height: var(--row-height);
+    border-bottom: 1px solid #f1f5f9;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 8px 0 16px;
+    font-size: 13px;
+    color: #0f172a;
+    cursor: pointer;
+    transition: background 0.1s;
+    box-sizing: border-box;
+}
+
+.opNameRow:hover { background: #f8fafc; }
+.rowActive { background: #e0f2fe !important; color: #0369a1; font-weight: 500; }
+
+.rowActions {
+    display: flex;
+    flex-direction: row; /* Горизонтальное расположение */
+    align-items: center;
+    gap: 6px; /* Расстояние между кнопками */
+    flex-shrink: 0; /* Чтобы кнопки не сжимались */
+}
+
+.opNameText {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex: 1;
+    margin-right: 12px;
+}
+
+.actionBtn, .miniEditBtn {
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    border: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-size: 14px;
+}
+
+.miniEditBtn {
+    background-color: #f1f5f9;
+    color: #64748b;
+    border: 1px solid #e2e8f0;
+}
+
+.miniEditBtn:hover {
+    background-color: #e2e8f0;
+    color: #3b82f6;
+}
+
+/* === ПРАВАЯ ЧАСТЬ (Скролл) === */
+.scrollArea {
+    flex-grow: 1;
+    /* min-width: 0 не дает флексу распереть родителя */
+    min-width: 0; 
+    overflow-x: auto; /* Скролл только здесь */
+    overflow-y: hidden;
+    position: relative;
+    /* Чтобы скроллбар был красивее (опционально) */
+    scrollbar-width: thin;
+    scrollbar-color: #cbd5e1 transparent;
+}
+
+/* Контейнер внутри скролла, который имеет огромную ширину */
+.timelineContent {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+}
+
+/* 1. Хедер дат */
+.timelineHeader {
+    height: var(--header-height);
+    background: #f8fafc;
+    border-bottom: 1px solid #e2e8f0;
+    display: flex;
+    box-sizing: border-box;
+}
+
+.dateCell {
+    flex-shrink: 0;
+    border-right: 1px solid #e2e8f0;
+    font-size: 11px;
+    color: #64748b;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    user-select: none;
+    box-sizing: border-box;
+}
+
+/* 2. Тело графика (сетка + полоски) */
+.timelineBody {
+    position: relative;
+    /* Высота определяется содержимым, но сетка должна быть на всю высоту */
+}
+
+/* СЛОЙ СЕТКИ */
+.gridLayer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    pointer-events: none;
+    z-index: 1;
+}
+
+.gridLine {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    border-right: 1px dashed #f1f5f9;
+}
+
+.todayLine {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px; /* Ширина линии */
+    background: repeating-linear-gradient(
+        to bottom,
+        #94a3b8,
+        #94a3b8 4px,
+        transparent 4px,
+        transparent 8px
+    );
+    z-index: 5;
+    pointer-events: auto;
+    
+    /* Добавлено: центрирует линию относительно координаты left */
+    transform: translateX(-50%); 
+}
+
+.deadlineLine {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px; /* Ширина линии */
+    background: #ef4444;
+    z-index: 6;
+    
+    /* Добавлено: центрирует линию относительно координаты left */
+    transform: translateX(-50%);
+}
+
+/* СЛОЙ ПОЛОСОК */
+.barsLayer {
+    position: relative;
+    z-index: 2; /* Поверх сетки */
+    display: flex;
+    flex-direction: column;
+}
+
+.barsRow {
+    height: var(--row-height);
+    border-bottom: 1px solid transparent; /* Чтобы высота совпадала с левой частью */
+    border-bottom-color: #f1f5f9;
+    position: relative;
+    box-sizing: border-box;
+    /* При наведении подсвечиваем всю строку (через JS прокидываем hover или просто CSS) */
+}
+.rowBgActive { background: rgba(224, 242, 254, 0.3); }
+
+.bar {
+    position: absolute;
+    height: 6px;
+    border-radius: 3px;
+    min-width: 4px; /* Чтобы видно было даже короткие */
+}
+
+.barPlan { background-color: #3b82f6; top: 10px; opacity: 0.6; }
+.barPredict { background-color: #eab308; top: 19px; z-index: 2; }
+.barActual { background-color: #22c55e; top: 28px; z-index: 3; height: 8px; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }

@@ -3,6 +3,7 @@ from django.db import models
 from django.contrib.auth.models import User, AbstractUser
 from django.core.exceptions import ValidationError
 from django.utils import timezone
+from datetime import timedelta
 
 class CustomUser(AbstractUser):
     ROLE_CHOICES = (
@@ -41,7 +42,17 @@ class Executor(models.Model):
 
 class Order(models.Model):
     name = models.CharField(max_length=255, verbose_name="Название заказа")
-    description = models.TextField(verbose_name="Описание/Чертеж")
+    description = models.TextField(verbose_name="Описание/Чертеж", null=True, blank=True)
+    default_master = models.ForeignKey(
+        CustomUser,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        verbose_name="Мастер по умолчанию",
+        related_name="mastered_orders"
+    )
+    deadline = models.DateTimeField(verbose_name="Дедлайн")
+
     created_by = models.ForeignKey(CustomUser, on_delete=models.CASCADE, verbose_name="Создатель")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Дата обновления")
@@ -56,73 +67,72 @@ class Order(models.Model):
 
 class Operation(models.Model):
     order = models.ForeignKey(Order, on_delete=models.CASCADE, verbose_name="Заказ", related_name='operations')
-    assembly_shop = models.ForeignKey(AssemblyShop, on_delete=models.CASCADE, verbose_name="Сборочный цех")
-    executors = models.ManyToManyField(Executor, verbose_name="Исполнители")
-
     name = models.CharField(max_length=255, verbose_name="Название операции", default="Операция")
     description = models.TextField(verbose_name="Описание операции", blank=True, null=True)
     
-    priority = models.IntegerField(verbose_name="Приоритет в сборочном цехе")
+    assembly_shop = models.ForeignKey(
+        AssemblyShop, 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True, 
+        verbose_name="Сборочный цех"
+    )
+    executors = models.ManyToManyField(Executor, verbose_name="Исполнители", blank=True)
 
-    planned_start = models.DateTimeField(verbose_name="Плановая дата начала")
-    planned_end = models.DateTimeField(verbose_name="Плановая дата окончания")
-
-    actual_planned_end = models.DateTimeField(verbose_name="Актуальная дата окончания", blank=True, null=True)
-    actual_planned_start = models.DateTimeField(verbose_name="Актуальная дата начала", blank=True, null=True)
-
-    actual_start = models.DateTimeField(null=True, blank=True, verbose_name="Фактическая дата начала")
-    actual_end = models.DateTimeField(null=True, blank=True, verbose_name="Фактическая дата окончания")
-
-    needs_master_check = models.BooleanField(default=False, verbose_name="Требуется проверка мастером")
-    master_checker = models.ForeignKey(
+    master = models.ForeignKey(
         CustomUser, 
         on_delete=models.SET_NULL, 
         null=True, 
         blank=True, 
-        verbose_name="Проверяющий"
+        verbose_name="Ответственный мастер"
     )
-    completed = models.BooleanField(default=False, verbose_name="Выполнено")
+    
+    next_operation = models.OneToOneField(
+        'self', 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True, 
+        related_name='previous_operation',
+        verbose_name="Следующая (зависимая) операция"
+    )
+
+    planned_start = models.DateTimeField(verbose_name="Плановая дата начала")
+    planned_end = models.DateTimeField(verbose_name="Плановая дата окончания")
+
+    predict_start = models.DateTimeField(verbose_name="Прогнозируемая дата начала")
+    predict_end = models.DateTimeField(verbose_name="Прогнозируемая дата окончания")
+
+    actual_start = models.DateTimeField(null=True, blank=True, verbose_name="Фактическая дата начала")
+    actual_end = models.DateTimeField(null=True, blank=True, verbose_name="Фактическая дата окончания")
     
     def clean(self):
-
         if self.planned_start and self.planned_end and self.planned_start >= self.planned_end:
             raise ValidationError("Дата окончания должна быть позже даты начала")
-
-        if self.priority < 1:
-            raise ValidationError("Приоритет операции должен быть положительным числом")
-
-        if self.master_checker and not self.needs_master_check:
-            raise ValidationError("Проверяющий может быть назначен только если требуется проверка мастером")
     
     def save(self, *args, **kwargs):
-
-        if self.actual_end and not self.completed:
-            self.completed = True
-
-        if self.actual_end and not self.actual_start and self.planned_start and self.planned_end:
-            duration = self.planned_end - self.planned_start
-            self.actual_start = self.actual_end - duration
-        # if the first save
-        if self.actual_planned_end == None:
-            self.actual_planned_end = self.planned_end
+        if not self.pk:
+            if not self.predict_start:
+                self.predict_start = self.planned_start
+            if not self.predict_end:
+                self.predict_end = self.planned_end
             
-        if self.actual_planned_start == None:
-            self.actual_planned_start = self.planned_start
-        
-        if not self.needs_master_check:
-            self.master_checker = None
-        
+            if not self.master and self.order.default_master:
+                self.master = self.order.default_master
+                
+        if self.pk == self.next_operation:
+            self.next_operation = None
+
         super().save(*args, **kwargs)
     
-    def duration_minutes(self):
-        """Длительность операции в минутах"""
-        if self.planned_start and self.planned_end:
-            return int((self.planned_end - self.planned_start).total_seconds() / 60)
-        return 0
+    @property
+    def duration(self):
+        if self.planned_end and self.planned_start:
+            return self.planned_end - self.planned_start
+        return timedelta(0)
     
     @property
     def status(self):
-        if self.completed:
+        if self.actual_end:
             return "completed"
         elif self.actual_start:
             return "in_progress"
@@ -130,14 +140,10 @@ class Operation(models.Model):
             return "planned"
     
     def __str__(self):
-        return f"{self.name} (Приоритет: {self.priority})"
+        return f"{self.name}"
     
     class Meta:
         verbose_name = "Операция"
         verbose_name_plural = "Операции"
-        ordering = ['priority']
-        indexes = [
-            models.Index(fields=['order', 'priority']),
-            models.Index(fields=['assembly_shop', 'planned_start']),
-        ]
+        ordering = ['predict_start']
         

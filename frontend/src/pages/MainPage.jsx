@@ -1,11 +1,12 @@
 import { useMemo, useState, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom"; // Для модалки завершения
 import styles from "./MainPage.module.css";
 import SearchBar from "../components/SearchBar";
-import ControlPanel from "../components/ControlPanel";
 import OrderList from "../components/OrderList";
 import Modal from "../components/Modal";
 import LoginModal from "../components/LoginModal";
 import OrderFormPage from "./OrderFormPage";
+import StartOperationModal from "../components/StartOperationModal"; // Перенесли сюда
 import { useAuth } from "../context/AuthContext";
 import { api } from "../api/api";
 import {
@@ -19,22 +20,39 @@ const MainPage = ({ onCreateOrder }) => {
 
   // --- Состояния данных ---
   const [orders, setOrders] = useState([]);
+  const [mastersList, setMastersList] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
 
   const isTechnolog = hasPermission(["technolog"]);
-  const canControl = hasPermission(["master", "technolog"]);
 
   // --- Состояния UI ---
   const [isOrderFormOpen, setIsOrderFormOpen] = useState(false);
   const [orderForEdit, setOrderForEdit] = useState(null);
   const [isFetchingDetails, setIsFetchingDetails] = useState(false);
-
+  const [focusOperationId, setFocusOperationId] = useState(null);
   const [showCompleted, setShowCompleted] = useState(true);
+  
+  // Состояния для МОДАЛЬНЫХ ОКОН ДЕЙСТВИЙ (Старт/Стоп)
+  const [opToStart, setOpToStart] = useState(null);
+  const [opToFinish, setOpToFinish] = useState(null);
+
+  const [ganttPeriod, setGanttPeriod] = useState(() => {
+      const saved = localStorage.getItem("ganttPeriod");
+      return saved ? parseInt(saved, 10) : 60;
+  });
+
+  const handleGanttPeriodChange = (e) => {
+      const val = parseInt(e.target.value, 10);
+      setGanttPeriod(val);
+      localStorage.setItem("ganttPeriod", val);
+  };
 
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [newOrderData, setNewOrderData] = useState({
     title: "",
     description: "",
+    deadline: "",
+    defaultMasterId: ""
   });
 
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
@@ -42,55 +60,45 @@ const MainPage = ({ onCreateOrder }) => {
   const [expandedOrderIds, setExpandedOrderIds] = useState(new Set());
   const [activeOrderId, setActiveOrderId] = useState(null);
   const [activeOperationId, setActiveOperationId] = useState(null);
-  const [isControlActive, setIsControlActive] = useState(false);
-  const [commonTimelineStart, setCommonTimelineStart] = useState(
-    formatDateInputValue(new Date())
-  );
+  const [commonTimelineStart, setCommonTimelineStart] = useState(() => {
+    const saved = localStorage.getItem("ganttTimelineStart");
+    return saved || formatDateInputValue(new Date());
+  });
 
-  // Вспомогательная функция для обновления URL без перезагрузки
+  // ... (updateUrlParams, openOrderForEdit, fetchOrders, useEffects - БЕЗ ИЗМЕНЕНИЙ) ...
   const updateUrlParams = (orderId) => {
     const url = new URL(window.location);
-    if (orderId) {
-      url.searchParams.set("editOrderId", orderId);
-    } else {
-      url.searchParams.delete("editOrderId");
-    }
+    if (orderId) url.searchParams.set("editOrderId", orderId);
+    else url.searchParams.delete("editOrderId");
     window.history.pushState({}, "", url);
   };
 
-  // 1. Функция открытия заказа (вынесена отдельно, чтобы вызывать и по клику, и при загрузке)
-  const openOrderForEdit = useCallback(async (orderId) => {
+  const openOrderForEdit = useCallback(async (orderId, opId = null) => {
     setIsFetchingDetails(true);
     try {
       const apiData = await api.orders.getOne(orderId);
       if (apiData) {
         const formData = mapBackendDetailToForm(apiData);
         setOrderForEdit(formData);
+        setFocusOperationId(opId);
         setIsOrderFormOpen(true);
-        updateUrlParams(orderId); // Обновляем URL
+        updateUrlParams(orderId);
       }
     } catch (error) {
       console.error(error);
-      // Если заказ не найден (например, удален), чистим URL
       updateUrlParams(null);
-      alert("Ошибка загрузки заказа или заказ не найден");
+      alert("Ошибка загрузки заказа");
     } finally {
       setIsFetchingDetails(false);
     }
   }, []);
 
-  // 2. Восстановление состояния при обновлении страницы (или первом входе)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const editOrderId = params.get("editOrderId");
-
-    if (editOrderId) {
-      // Если в URL есть ID, пытаемся открыть заказ
-      openOrderForEdit(editOrderId);
-    }
+    if (editOrderId) openOrderForEdit(editOrderId);
   }, [openOrderForEdit]);
 
-  // --- Загрузка списка ---
   const fetchOrders = useCallback(async () => {
     setIsLoading(true);
     try {
@@ -105,12 +113,21 @@ const MainPage = ({ onCreateOrder }) => {
       setIsLoading(false);
     }
   }, []);
-
+  
   useEffect(() => {
-    fetchOrders();
+      const loadMasters = async () => {
+        try {
+          const data = await api.refs.getMasters();
+          setMastersList(data?.results || []);
+        } catch (error) { console.error(error); }
+      };
+      if (isAuthenticated) {
+          loadMasters();
+          fetchOrders();
+      }
   }, [isAuthenticated, fetchOrders]);
 
-  // ... Мемоизация (без изменений) ...
+
   const timelineStartByOrder = useMemo(() => {
     const map = {};
     orders.forEach((order) => (map[order.id] = commonTimelineStart));
@@ -121,135 +138,115 @@ const MainPage = ({ onCreateOrder }) => {
     const matchedOrders = orders.filter((order) =>
       order.title.toLowerCase().includes(searchTerm.toLowerCase())
     );
-
     return matchedOrders.map((order) => {
       const visibleOperations = showCompleted
         ? order.operations
         : order.operations.filter((op) => !op.completed);
-
       return { ...order, operations: visibleOperations };
-    }).filter(order => {
-        // Всегда показываем, если режим "Показывать выполненные"
-        if (showCompleted) return true;
-        
-        // Показываем, если есть активные задачи
-        if (order.operations.length > 0) return true;
-
-        // Показываем, если заказ ИЗНАЧАЛЬНО был пуст (это новый заказ)
-        // Находим оригинал в orders, чтобы проверить
-        // const original = orders.find(o => o.id === order.id);
-        // if (original && original.operations.length === 0) return true;
-
-        // Иначе скрываем (значит, заказ был с задачами, но все они выполнены и скрыты)
-        return false;
-    });
+    }).filter(order => showCompleted ? true : order.operations.length > 0);
   }, [orders, searchTerm, showCompleted]);
 
-  const assignedOperations = useMemo(() => {
-    return orders.flatMap((order) =>
-      order.operations
-        .filter(
-          (operation) =>
-            operation.assignedTo === role && // Роль совпадает
-            !operation.completed // <--- И операция НЕ выполнена
-        )
-        .map((operation) => ({
-          ...operation,
-          orderId: order.id,
-          orderTitle: order.title,
-        }))
-    );
-  }, [orders, role]);
+   const fetchTimelineStart = useCallback(async () => {
+    if (localStorage.getItem("ganttTimelineStart")) {
+        return;
+    }
 
-  const fetchTimelineStart = useCallback(async () => {
     try {
-      const data = await api.operations.getFirst();
-      if (data && data.actual_planned_start) {
-        const dateStr = formatDateInputValue(data.actual_planned_start);
-        setCommonTimelineStart(dateStr);
-      }
+        const data = await api.operations.getFirst();
+        const dateValue = data?.actual_planned_start || data?.planned_start;
+        if (dateValue) {
+            const cleanDate = dateValue.toString().split(' ')[0].split('T')[0];
+            setCommonTimelineStart(cleanDate);
+        }
     } catch (error) {
-      console.error("Не удалось обновить дату начала графика:", error);
+        console.error("Не удалось получить дату первой операции:", error);
     }
   }, []);
 
-  // НОВЫЙ USE EFFECT: Загрузка начальной даты графика
-  useEffect(() => {
-    fetchTimelineStart();
-  }, [fetchTimelineStart]); // Пустой массив зависимостей = выполняется 1 раз при загрузке
+  useEffect(() => { fetchTimelineStart(); }, [fetchTimelineStart]);
 
-  // --- Обработчики ---
+  // --- Обработчики действий ---
+  const handleEditOperationClick = useCallback((operation) => {
+      if (operation.orderId) openOrderForEdit(operation.orderId, operation.id);
+  }, [openOrderForEdit]);
 
-  const handleCreateOrderClick = () => {
-    setNewOrderData({ title: "", description: "" });
-    setIsCreateModalOpen(true);
+  const handleDateChange = (e) => {
+      const newValue = e.target.value;
+      setCommonTimelineStart(newValue);
+      localStorage.setItem("ganttTimelineStart", newValue);
   };
 
-  const handleConfirmControl = useCallback(
-    async (operationId) => {
+  const handleCreateOrderClick = () => {
+    setNewOrderData({ title: "", description: "", deadline: "", defaultMasterId: "" });
+    setIsCreateModalOpen(true);
+  };
+  
+  // --- ЛОГИКА СТАРТА / СТОПА ---
+  const handleInitiateStart = (operation) => {
+      setOpToStart(operation);
+  };
+
+  const handleInitiateFinish = (operation) => {
+      setOpToFinish(operation);
+  };
+
+  const handleConfirmStart = async (opId, workshopId, executorIds) => {
       try {
-        await api.operations.complete(operationId);
-        // После успешного выполнения обновляем список заказов,
-        // чтобы операция пропала из списка "На контроль" (если бэкенд возвращает completed: true в списке)
-        await fetchOrders();
-      } catch (error) {
-        console.error("Ошибка при подтверждении контроля:", error);
-        alert("Ошибка при выполнении операции");
-      }
-    },
-    [fetchOrders]
-  );
+          await api.operations.start(opId, workshopId, executorIds);
+          await fetchOrders();
+      } catch (e) { alert("Ошибка старта: " + e.message); }
+      finally { setOpToStart(null); }
+  };
+
+  const handleConfirmFinish = async () => {
+      if (!opToFinish) return;
+      try {
+          await api.operations.end(opToFinish.id);
+          await fetchOrders();
+      } catch (e) { alert("Ошибка завершения"); }
+      finally { setOpToFinish(null); }
+  };
 
   const handleConfirmCreateOrder = async () => {
-    if (!newOrderData.title.trim()) {
-      alert("Введите название заказа");
-      return;
+    if (!newOrderData.title.trim() || !newOrderData.deadline) {
+      alert("Заполните название и дедлайн"); return;
     }
-
     try {
       const createdOrder = await api.orders.create(newOrderData);
       await fetchOrders();
-
       setIsCreateModalOpen(false);
-
-      // Открываем форму и обновляем URL
       const formData = mapBackendDetailToForm(createdOrder);
       setOrderForEdit(formData);
       setIsOrderFormOpen(true);
-      updateUrlParams(createdOrder.id);
-    } catch (error) {
-      console.error("Ошибка создания заказа", error);
-      alert("Не удалось создать заказ");
-    }
+    } catch (error) { alert("Не удалось создать заказ: " + error.message); }
   };
 
-  // Клик по кнопке "Редактировать" в списке
-  const handleEditOrderClick = useCallback(
-    (orderShort) => {
-      openOrderForEdit(orderShort.id);
-    },
-    [openOrderForEdit]
-  );
-
-  // Закрытие формы
   const handleCloseOrderForm = () => {
     setIsOrderFormOpen(false);
     setOrderForEdit(null);
-    updateUrlParams(null); // Чистим URL
+    setFocusOperationId(null);
+    updateUrlParams(null);
   };
 
-  const handleSaveOrderForm = async (orderData) => {
-    // Здесь будет PUT запрос обновления заказа
+  const handleSelectOperation = (order, operation) => {
+        if (activeOperationId === operation.id) {
+            setActiveOrderId(null); setActiveOperationId(null);
+        } else {
+            setActiveOrderId(order.id); setActiveOperationId(operation.id);
+        }
+    };
+
+  const handleSaveOrderForm = async () => {
     await fetchOrders();
     await fetchTimelineStart();
     handleCloseOrderForm();
   };
 
   const handleOrderDeleted = async () => {
-    setIsOrderFormOpen(false); // Закрываем форму
+    setIsOrderFormOpen(false);
     setOrderForEdit(null);
-    updateUrlParams(null); // Чистим URL
-    await fetchOrders(); // Обновляем список
+    updateUrlParams(null);
+    await fetchOrders();
   };
 
   const handleToggleOrder = useCallback((id) => {
@@ -261,15 +258,14 @@ const MainPage = ({ onCreateOrder }) => {
   }, []);
 
   // --- РЕНДЕР ---
-
   if (isOrderFormOpen) {
     return (
       <OrderFormPage
         order={orderForEdit}
-        allOrders={orders}
         onSave={handleSaveOrderForm}
         onCancel={handleCloseOrderForm}
-        onDelete={handleOrderDeleted} // <--- ЭТОТ ПРОПС ДОЛЖЕН БЫТЬ
+        onDelete={handleOrderDeleted}
+        focusOperationId={focusOperationId}
       />
     );
   }
@@ -281,83 +277,60 @@ const MainPage = ({ onCreateOrder }) => {
           <SearchBar
             value={searchTerm}
             onChange={setSearchTerm}
-            onLoginClick={() =>
-              isAuthenticated ? logout() : setIsLoginModalOpen(true)
-            }
+            onLoginClick={() => isAuthenticated ? logout() : setIsLoginModalOpen(true)}
             isAuthenticated={isAuthenticated}
             user={user}
           />
         </div>
-        <div className={styles.leftColumn}>
-          {/* Кнопка создания видна ТОЛЬКО технологу */}
-          {isTechnolog && (
-            <button
-              className={styles.createButton}
-              onClick={handleCreateOrderClick}
-            >
-              + Заказ
-            </button>
-          )}
-          <ControlPanel
-            operations={assignedOperations}
-            isControlActive={isControlActive}
-            onToggleControl={() => setIsControlActive(!isControlActive)}
-            canToggleControl={role === "technolog"}
-            onOperationClick={console.log}
-            canControl={canControl}
-            onConfirmControl={handleConfirmControl}
-          />
-        </div>
+        
+        {/* ЛЕВАЯ КОЛОНКА УДАЛЕНА, КНОПКА СОЗДАНИЯ ПЕРЕМЕЩЕНА В ШАПКУ ТАБЛИЦЫ ИЛИ ОСТАВЛЕНА СЛЕВА В БЛОКЕ */}
+        
         <section className={styles.ordersArea}>
           <div className={styles.ordersCard}>
             <div className={styles.ordersHeader}>
               <div className={styles.ordersTitle}>
-                Заказы{" "}
-                {isLoading && (
-                  <span style={{ fontSize: "14px", color: "#64748b" }}>
-                    (Загрузка...)
-                  </span>
-                )}
-                {isFetchingDetails && (
-                  <span style={{ fontSize: "14px", color: "#3b82f6" }}>
-                    {" "}
-                    (Открытие...)
-                  </span>
+                Заказы {isLoading && <span style={{fontSize: "14px", color: "#64748b"}}>(Загрузка...)</span>}
+                {/* Кнопка создания заказа теперь здесь, если Технолог */}
+                {isTechnolog && (
+                    <button 
+                        className={styles.createButtonSmall} 
+                        onClick={handleCreateOrderClick}
+                        style={{marginLeft: '16px', padding: '6px 12px', fontSize: '14px', borderRadius: '8px'}}
+                    >
+                        + Новый
+                    </button>
                 )}
               </div>
-              {/* Блок управления графиком */}
-              <div
-                className={styles.controlsGroup}
-                style={{ display: "flex", gap: "20px", alignItems: "center" }}
-              >
-                {/* Чекбокс показа выполненных */}
-                <label
-                  className={styles.checkboxLabel}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "8px",
-                    fontSize: "14px",
-                    cursor: "pointer",
-                    userSelect: "none",
-                  }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={showCompleted}
-                    onChange={(e) => setShowCompleted(e.target.checked)}
-                    style={{ width: "16px", height: "16px", cursor: "pointer" }}
-                  />
+              
+              <div className={styles.controlsGroup} style={{ display: "flex", gap: "20px", alignItems: "center" }}>
+                <label className={styles.checkboxLabel} style={{display: "flex", alignItems: "center", gap: "8px", fontSize: "14px", cursor: "pointer"}}>
+                  <input type="checkbox" checked={showCompleted} onChange={(e) => setShowCompleted(e.target.checked)} style={{ width: "16px", height: "16px"}} />
                   Показывать выполненные
                 </label>
+                
                 <div className={styles.globalDateControl}>
-                  <label htmlFor="global-timeline-start">Начало графика:</label>
+                   <label>Масштаб:</label>
+                   <select 
+                      className={styles.globalDateInput} 
+                      value={ganttPeriod} 
+                      onChange={handleGanttPeriodChange}
+                   >
+                       <option value={30}>30 дней</option>
+                       <option value={60}>60 дней</option>
+                       <option value={90}>90 дней</option>
+                       <option value={120}>120 дней</option>
+                       <option value={365}>1 год</option>
+                   </select>
+                </div>
+
+                <div className={styles.globalDateControl}>
+                  <label htmlFor="global-timeline-start">Начало:</label>
                   <input
                     id="global-timeline-start"
                     type="date"
                     className={styles.globalDateInput}
                     value={commonTimelineStart}
-                    onChange={(e) => setCommonTimelineStart(e.target.value)}
+                    onChange={handleDateChange}
                   />
                 </div>
               </div>
@@ -368,63 +341,78 @@ const MainPage = ({ onCreateOrder }) => {
               expandedIds={expandedOrderIds}
               canEdit={isTechnolog}
               onToggleOrder={handleToggleOrder}
-              onSelectOperation={(o, op) => {
-                setActiveOrderId(o.id);
-                setActiveOperationId(op.id);
-              }}
-              onEditOrder={handleEditOrderClick}
-              onEditOperation={() => {}}
+              onSelectOperation={handleSelectOperation}
+              onEditOrder={(order) => openOrderForEdit(order.id)}
+              onEditOperation={handleEditOperationClick} 
               activeOrderId={activeOrderId}
               activeOperationId={activeOperationId}
               timelineStartByOrder={timelineStartByOrder}
               onTimelineStartChange={(_, date) => setCommonTimelineStart(date)}
+              daysRange={ganttPeriod} 
+
+              // === ПЕРЕДАЕМ ВНИЗ ===
+              currentUser={user}
+              onInitiateStart={handleInitiateStart}
+              onInitiateFinish={handleInitiateFinish}
             />
           </div>
         </section>
       </div>
 
-      {isLoginModalOpen && (
-        <LoginModal
-          onClose={() => setIsLoginModalOpen(false)}
-          onLogin={login}
-        />
+      {isLoginModalOpen && <LoginModal onClose={() => setIsLoginModalOpen(false)} onLogin={login} />}
+      
+      {/* Модалка создания заказа */}
+      {isCreateModalOpen && (
+        <Modal 
+            title="Новый заказ" 
+            onClose={() => setIsCreateModalOpen(false)} 
+            onSubmit={handleConfirmCreateOrder}
+            isSubmitDisabled={!newOrderData.title.trim() || !newOrderData.deadline}
+        >
+             {/* ... (поля формы те же) ... */}
+             <div className={styles.formGroup}>
+                <label className={styles.formLabel}>Название заказа <span style={{color: 'red'}}>*</span></label>
+                <input className={styles.formInput} value={newOrderData.title} onChange={(e) => setNewOrderData({...newOrderData, title: e.target.value})} autoFocus />
+             </div>
+             <div className={styles.formGroup}>
+                <label className={styles.formLabel}>Дедлайн <span style={{color: 'red'}}>*</span></label>
+                <input type="date" className={styles.formInput} value={newOrderData.deadline} onChange={(e) => setNewOrderData({...newOrderData, deadline: e.target.value})} />
+             </div>
+             <div className={styles.formGroup}>
+                <label className={styles.formLabel}>Мастер по умолчанию</label>
+                <select className={styles.formInput} value={newOrderData.defaultMasterId} onChange={(e) => setNewOrderData({...newOrderData, defaultMasterId: e.target.value})}>
+                    <option value="">-- Не назначен --</option>
+                    {mastersList.map(m => <option key={m.id} value={m.id}>{m.full_name || m.username}</option>)}
+                </select>
+             </div>
+             <div className={styles.formGroup}>
+                <label className={styles.formLabel}>Описание</label>
+                <textarea className={styles.formInput} style={{minHeight: "100px"}} value={newOrderData.description} onChange={(e) => setNewOrderData({...newOrderData, description: e.target.value})} />
+             </div>
+        </Modal>
       )}
 
-      {isCreateModalOpen && (
-        <Modal
-          title="Новый заказ"
-          onClose={() => setIsCreateModalOpen(false)}
-          onSubmit={handleConfirmCreateOrder}
-          isSubmitDisabled={!newOrderData.title.trim()}
-        >
-          <div className={styles.formGroup}>
-            <label className={styles.formLabel}>Название заказа</label>
-            <input
-              className={styles.formInput}
-              value={newOrderData.title}
-              onChange={(e) =>
-                setNewOrderData({ ...newOrderData, title: e.target.value })
-              }
-              placeholder="Например: Заказ №123"
-              autoFocus
-            />
-          </div>
-          <div className={styles.formGroup}>
-            <label className={styles.formLabel}>Описание</label>
-            <textarea
-              className={styles.formInput}
-              style={{ minHeight: "100px", resize: "vertical" }}
-              value={newOrderData.description}
-              onChange={(e) =>
-                setNewOrderData({
-                  ...newOrderData,
-                  description: e.target.value,
-                })
-              }
-              placeholder="Дополнительная информация"
-            />
-          </div>
-        </Modal>
+      {/* Модалка СТАРТА операции */}
+      <StartOperationModal 
+          isOpen={!!opToStart}
+          operation={opToStart || {}}
+          onClose={() => setOpToStart(null)}
+          onConfirm={handleConfirmStart}
+      />
+
+      {/* Модалка ЗАВЕРШЕНИЯ операции */}
+      {opToFinish && createPortal(
+          <div style={{position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000}} onClick={() => setOpToFinish(null)}>
+            <div style={{background: 'white', padding: '24px', borderRadius: '12px', width: '400px'}} onClick={e => e.stopPropagation()}>
+              <h3 style={{marginTop: 0}}>Завершение операции</h3>
+              <p>Подтвердите выполнение операции <strong>"{opToFinish.name}"</strong></p>
+              <div style={{display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '20px'}}>
+                <button onClick={() => setOpToFinish(null)} style={{padding: '8px 16px', borderRadius: '8px', border: '1px solid #ccc', background: 'white', cursor: 'pointer'}}>Отмена</button>
+                <button onClick={handleConfirmFinish} style={{padding: '8px 16px', borderRadius: '8px', border: 'none', background: '#22c55e', color: 'white', cursor: 'pointer', fontWeight: 'bold'}}>Завершить</button>
+              </div>
+            </div>
+          </div>,
+          document.body
       )}
     </div>
   );
