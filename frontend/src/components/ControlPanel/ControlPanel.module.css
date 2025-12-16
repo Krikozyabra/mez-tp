@@ -89,20 +89,28 @@
 
 /* Стили кнопки контроля */
 .controlButton {
-    padding: 6px 12px;
-    background: #22c55e;
-    color: white;
-    border: none;
-    border-radius: 6px;
-    font-size: 12px;
-    font-weight: 600;
+    /* ... ваши стили ... */
+    opacity: 1;
     cursor: pointer;
-    transition: background 0.2s;
-    white-space: nowrap;
 }
 
-.controlButton:hover {
-    background: #16a34a;
+/* Стиль для отключенной кнопки */
+.disabledButton {
+    background-color: #cbd5e1; /* Серый цвет */
+    color: #64748b;
+    cursor: not-allowed;
+    border: 1px solid #cbd5e1;
+}
+
+.disabledButton:hover {
+    background-color: #cbd5e1; /* Не менять цвет при наведении */
+}
+
+.startButton {
+    background-color: #3b82f6; /* Синий для старта */
+}
+.startButton:hover {
+    background-color: #2563eb;
 }
 
 /* Стили модального окна (аналогичны OrderFormPage) */

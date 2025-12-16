@@ -3,21 +3,39 @@
     padding: 24px;
     background: #edf1f7;
     box-sizing: border-box;
+    overflow-x: hidden;
 }
 
 .layout {
-    display: grid;
-    grid-template-columns: 260px 1fr;
-    grid-template-rows: auto 1fr;
+    display: flex; /* Вместо Grid */
+    flex-direction: column;
     gap: 24px;
+    min-width: 0;
 }
 
-.leftColumn {
+.headerBar {
+    width: 100%;
+}
+
+.createButtonSmall {
+    background: #22c55e;
+    color: #fff;
+    border: none;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+.createButtonSmall:hover {
+    background: #16a34a;
+}
+
+.ordersArea {
+    background: transparent;
     display: flex;
     flex-direction: column;
     gap: 16px;
-    grid-column: 1 / 2;
-    grid-row: 2 / 3;
+    flex: 1; /* Растягиваем */
+    min-width: 0;
 }
 
 .createButton {
@@ -37,27 +55,14 @@
     cursor: not-allowed;
 }
 
-.headerBar {
-    grid-column: 1 / span 2;
-}
-
-.ordersArea {
-    background: transparent;
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-    grid-column: 2 / 3;
-    grid-row: 2 / 3;
-}
-
 .ordersCard {
     background: #fff;
     border-radius: 16px;
     border: 1px solid #e2e8f0;
     padding: 16px;
+    min-width: 0;
 }
 
-/* Изменено для выравнивания заголовка и даты */
 .ordersHeader {
     display: flex;
     justify-content: space-between;

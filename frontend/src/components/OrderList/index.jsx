@@ -13,6 +13,10 @@ const OrderList = ({
   activeOperationId,
   timelineStartByOrder,
   onTimelineStartChange,
+  daysRange,
+  currentUser,
+  onInitiateStart,
+  onInitiateFinish
 }) => {
     return (
         <div className={styles.list}>
@@ -25,10 +29,16 @@ const OrderList = ({
                     onToggle={onToggleOrder}
                     onSelectOperation={(currentOrder, operation) => onSelectOperation(currentOrder, operation)}
                     onEditOrder={onEditOrder}
-                    onEditOperation={(currentOrder, operation) => onEditOperation(currentOrder, operation)}
+                    onEditOperation={(_, operation) => onEditOperation(operation)}
                     activeOperationId={activeOrderId === order.id ? activeOperationId : null}
                     timelineStartDate={timelineStartByOrder[order.id]}
                     onTimelineStartChange={(date) => onTimelineStartChange(order.id, date)}
+                    daysRange={daysRange}
+                    
+                    // Передаем дальше
+                    currentUser={currentUser}
+                    onInitiateStart={onInitiateStart}
+                    onInitiateFinish={onInitiateFinish}
                 />
             ))}
         </div>

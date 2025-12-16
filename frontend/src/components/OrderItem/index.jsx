@@ -1,11 +1,6 @@
 import GanttChart from '../GanttChart';
 import styles from './OrderItem.module.css';
 
-const formatDateRange = (startDate, endDate) => {
-  const formatter = new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: '2-digit' });
-  return `${formatter.format(new Date(startDate))} – ${formatter.format(new Date(endDate))}`;
-};
-
 const OrderItem = ({
   order,
   isExpanded,
@@ -17,6 +12,10 @@ const OrderItem = ({
   activeOperationId,
   timelineStartDate,
   onTimelineStartChange,
+  daysRange,
+  currentUser,
+  onInitiateStart,
+  onInitiateFinish
 }) => {
   const fallbackTimelineStart = timelineStartDate || order.operations[0]?.startDate || new Date().toISOString().split('T')[0];
 
@@ -47,14 +46,17 @@ const OrderItem = ({
             operations={order.operations}
             activeOperationId={activeOperationId}
             timelineStartDate={fallbackTimelineStart}
+            orderDeadline={order.deadline} 
             onTimelineStartChange={onTimelineStartChange}
             orderTitle={order.title}
-            hideLabels={false}
             compact
-            requireSelection={false}
             onSelectOperation={(operation) => onSelectOperation(order, operation)}
             onEditOperation={canEdit ? (operation) => onEditOperation(order, operation) : null}
             canEdit={canEdit}
+            daysRange={daysRange}
+            currentUser={currentUser}
+            onInitiateStart={onInitiateStart}
+            onInitiateFinish={onInitiateFinish}
           />
         </div>
       )}

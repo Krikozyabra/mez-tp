@@ -1,13 +1,6 @@
-const BASE_URL = 'http://127.0.0.1:8000/api/v1';
+const BASE_URL = '/api/v1';
 
-const getHeaders = () => {
-    const token = localStorage.getItem('accessToken');
-    return {
-        'Content-Type': 'application/json',
-        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-    };
-};
-
+// Вспомогательная функция для обработки ответов
 const handleResponse = async (response) => {
     if (response.ok) {
         if (response.status === 204) return null;
@@ -17,85 +10,163 @@ const handleResponse = async (response) => {
             return null;
         }
     }
-    // Логируем ошибку для отладки
-    console.error(`API Error: ${response.status} ${response.statusText} at ${response.url}`);
-    throw new Error(`Request failed: ${response.status}`);
+    
+    // Пытаемся достать текст ошибки
+    let errorDetail = `Request failed: ${response.status}`;
+    try {
+        const errJson = await response.json();
+        if (errJson.detail) errorDetail = errJson.detail;
+        else if (typeof errJson === 'object') errorDetail = JSON.stringify(errJson);
+    } catch (e) {}
+
+    // Выбрасываем ошибку с информацией о статусе, чтобы можно было отловить 401 выше
+    const error = new Error(errorDetail);
+    error.status = response.status;
+    throw error;
+};
+
+// Функция для получения заголовков (включая токен)
+const getHeaders = () => {
+    const token = localStorage.getItem('accessToken');
+    return {
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+    };
+};
+
+/**
+ * Обертка над fetch с автоматическим обновлением токена
+ */
+const authFetch = async (endpoint, options = {}) => {
+    const url = `${BASE_URL}${endpoint}`;
+    
+    // 1. Делаем первый запрос
+    const config = {
+        ...options,
+        headers: {
+            ...getHeaders(),
+            ...options.headers
+        }
+    };
+
+    let response = await fetch(url, config);
+
+    // 2. Если получили 401 (Unauthorized), пробуем обновить токен
+    if (response.status === 401) {
+        const refreshToken = localStorage.getItem('refreshToken');
+        
+        if (refreshToken) {
+            try {
+                // Запрос на обновление токена
+                const refreshResponse = await fetch(`${BASE_URL}/auth/refresh/`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ refresh: refreshToken })
+                });
+
+                if (refreshResponse.ok) {
+                    const data = await refreshResponse.json();
+                    
+                    // Сохраняем новый access токен
+                    localStorage.setItem('accessToken', data.access);
+                    // Если бэкенд возвращает новый refresh токен (при ротации), сохраняем и его
+                    if (data.refresh) {
+                        localStorage.setItem('refreshToken', data.refresh);
+                    }
+
+                    // 3. Повторяем исходный запрос с новым токеном
+                    const newConfig = {
+                        ...options,
+                        headers: {
+                            ...getHeaders(), // Заголовки возьмутся заново из localStorage
+                            ...options.headers
+                        }
+                    };
+                    response = await fetch(url, newConfig);
+                } else {
+                    // Если refresh токен тоже невалиден — полный логаут
+                    console.error("Refresh token expired");
+                    localStorage.removeItem('accessToken');
+                    localStorage.removeItem('refreshToken');
+                    window.location.href = '/'; // Или вызов метода logout из контекста, если бы он был тут доступен
+                    throw new Error('Session expired');
+                }
+            } catch (error) {
+                // Ошибка сети или другая проблема при обновлении
+                localStorage.removeItem('accessToken');
+                localStorage.removeItem('refreshToken');
+                throw error;
+            }
+        }
+    }
+
+    return handleResponse(response);
 };
 
 export const api = {
-    orders: {
-        // Исправлено на orders (было order)
-        getAll: () => fetch(`${BASE_URL}/orders/`, { headers: getHeaders() }).then(handleResponse),
-        getOne: (id) => fetch(`${BASE_URL}/orders/${id}/`, { headers: getHeaders() }).then(handleResponse),
-        delete: (id) => fetch(`${BASE_URL}/orders/${id}/`, { 
-            method: 'DELETE', 
-            headers: getHeaders() 
+    auth: {
+        // Login используем обычный fetch, чтобы не зациклить 401
+        login: (username, password) => fetch(`${BASE_URL}/auth/`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password })
         }).then(handleResponse),
-        create: (data) => fetch(`${BASE_URL}/orders/`, { 
+        
+        getMe: () => authFetch('/auth/users/me/'),
+    },
+
+    orders: {
+        getAll: (page = 1) => authFetch(`/order/?page=${page}`),
+        getOne: (id) => authFetch(`/order/${id}/`),
+        delete: (id) => authFetch(`/order/${id}/`, { method: 'DELETE' }),
+        
+        create: (data) => authFetch(`/order/`, { 
             method: 'POST', 
-            headers: getHeaders(), 
             body: JSON.stringify({
                 name: data.title,
                 description: data.description,
+                deadline: data.deadline,
+                default_master: data.defaultMasterId ? parseInt(data.defaultMasterId) : null 
             }) 
-        }).then(handleResponse),
+        }),
 
-        update: (id, data) => fetch(`${BASE_URL}/orders/${id}/`, { 
-            method: 'PUT',
-            headers: getHeaders(), 
+        update: (id, data) => authFetch(`/order/${id}/`, { 
+            method: 'PATCH', 
             body: JSON.stringify({
                 name: data.title,
-                description: data.description
+                description: data.description,
+                deadline: data.deadline,
+                default_master: data.defaultMasterId ? parseInt(data.defaultMasterId) : null
             }) 
-        }).then(handleResponse),
+        }),
     },
     operations: {
-        // Исправлено на operations (было operation)
-        create: (data) => fetch(`${BASE_URL}/operations/`, { 
+        create: (data) => authFetch(`/operation/`, { 
             method: 'POST', 
-            headers: getHeaders(), 
             body: JSON.stringify(data) 
-        }).then(handleResponse),
+        }),
         
-        delete: (id) => fetch(`${BASE_URL}/operations/${id}/`, { 
-            method: 'DELETE', 
-            headers: getHeaders() 
-        }).then(handleResponse),
-        
-        getLastInShop: async (shopId) => {
-            const res = await fetch(`${BASE_URL}/operations/last-in-shop/${shopId}/`, { headers: getHeaders() });
-            if (!res.ok) return null;
-            let data = await res.json();
-            if (typeof data === 'string') {
-                try { data = JSON.parse(data); } catch(e) {}
-            }
-            return data;
-        },
+        delete: (id) => authFetch(`/operation/${id}/`, { method: 'DELETE' }),
 
-        complete: (id) => fetch(`${BASE_URL}/operations/complete/${id}/`, { 
-            method: 'PUT', 
-            headers: getHeaders(),
-            body: JSON.stringify({ completed: true })
-        }).then(handleResponse),
-
-        update: (id, data) => fetch(`${BASE_URL}/operations/${id}/`, { 
-            method: 'PUT', 
-            headers: getHeaders(), 
+        update: (id, data) => authFetch(`/operation/${id}/`, { 
+            method: 'PATCH', 
             body: JSON.stringify(data) 
-        }).then(handleResponse),
+        }),
 
-        // Исправлен путь на /first/ (чтобы совпадало с urls.py)
-        getFirst: () => fetch(`${BASE_URL}/operations/first/`, { 
-            headers: getHeaders() 
-        }).then(handleResponse),
+        start: (id, assemblyShopId, executorIds) => authFetch(`/operation/${id}/start/`, { 
+            method: 'PATCH', 
+            body: JSON.stringify({ 
+                assembly_shop_id: parseInt(assemblyShopId),
+                executor_ids: executorIds.map(Number)
+            })
+        }),
+
+        end: (id) => authFetch(`/operation/${id}/end/`, { method: 'PATCH' }),
     },
     refs: {
-        // Исправлено на workshops и executors
-        getWorkshops: () => fetch(`${BASE_URL}/workshops/`, { headers: getHeaders() }).then(handleResponse),
-        getExecutors: () => fetch(`${BASE_URL}/executors/`, { headers: getHeaders() }).then(handleResponse),
-        getExecutorsByWorkshop: (workshopId) => 
-            fetch(`${BASE_URL}/executors/by-workshop/${workshopId}/`, { headers: getHeaders() })
-            .then(handleResponse),
-        getMasters: () => fetch(`${BASE_URL}/masters/`, { headers: getHeaders() }).then(handleResponse),
+        getWorkshops: () => authFetch(`/workshops/`),
+        getExecutors: () => authFetch(`/executors/`),
+        getExecutorsByWorkshop: (workshopId) => authFetch(`/executors/by-workshop/${workshopId}/`),
+        getMasters: () => authFetch(`/masters/`),
     }
 };

@@ -1,140 +1,207 @@
 from datetime import timedelta
-
 from django.db import transaction
-from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from rest_framework import generics, status, views
+from django.shortcuts import get_object_or_404
+from rest_framework import generics, views, status, permissions
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticatedOrReadOnly
+from api.models import Operation, AssemblyShop, Executor
+from api.serializers import OperationSerializer, OperationStartSerializer
+from api.permissions import IsTechnologistOrAdmin, IsMasterOrTechnologist
 
-from api.models import Operation
-from api.serializers import (
-    OperationSerializer,
-    LastOperationSerializer,
-    FirstOperationSerializer
-)
+from rest_framework.pagination import PageNumberPagination
 
 
-class OperationAPIList(generics.ListCreateAPIView):
+class StandardResultsSetPagination(PageNumberPagination):
+    page_size = 20
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
+def recalculate_chain(start_operation, is_ended = True):
+    """
+    Рекурсивно (или итеративно) обновляет predict_start/end для зависимых операций.
+    """
+    current_op = start_operation
+    # Чтобы избежать бесконечных циклов, можно использовать set для visited
+    visited = set()
+
+    while current_op.next_operation:
+        next_op = current_op.next_operation
+        
+        if next_op.id in visited:
+            break
+        visited.add(next_op.id)
+        
+        # New Predict Start = Previous Predict End
+        next_op.predict_start = current_op.actual_end if is_ended else current_op.predict_end
+        # New Predict End = Start + Duration
+        next_op.predict_end = next_op.predict_start + next_op.duration
+        
+        next_op.save(update_fields=['predict_start', 'predict_end'])
+        
+        current_op = next_op
+
+class OperationListCreateAPIView(generics.ListCreateAPIView):
+    """
+    GET: Список операций (доступно всем).
+    POST: Создание операции (только Технолог/Админ).
+    """
     queryset = Operation.objects.all()
     serializer_class = OperationSerializer
-    permission_classes = [IsAuthenticatedOrReadOnly]
-
-
-class OperationAPIUpdate(generics.RetrieveUpdateDestroyAPIView):
+    pagination_class = StandardResultsSetPagination
+    
+    def get_permissions(self):
+        if self.request.method == 'POST':
+            return [IsTechnologistOrAdmin()]
+        return [permissions.AllowAny()]
+    
+class OperationDetailUpdateDeleteAPIView(generics.RetrieveUpdateDestroyAPIView):
+    """
+    GET: Получить операцию.
+    PUT/PATCH: Изменить параметры.
+    - Технолог/Админ: все поля.
+    - Мастер: только исполнители и цех (и только если он привязан).
+    DELETE: Удалить (только Технолог/Админ).
+    """
     queryset = Operation.objects.all()
     serializer_class = OperationSerializer
-    permission_classes = [IsAuthenticatedOrReadOnly]
+    
+    def get_permissions(self):
+        if self.request.method == 'DELETE':
+            return [IsTechnologistOrAdmin()]
 
-
-class OperationAPIGetLast(views.APIView):
-    """
-    Получение последней операции в цехе по actual_planned_end.
-    """
-    def get(self, request, assembly_shop_pk):
-        operation = Operation.objects\
-            .filter(assembly_shop=assembly_shop_pk)\
-            .order_by('actual_planned_end')\
-            .last()
-            
-        if not operation:
-            return Response(
-                {"detail": "Operations not found in this shop."}, 
-                status=status.HTTP_404_NOT_FOUND
-            )
-            
-        serialized = LastOperationSerializer(operation)
-        return Response(serialized.data)
-
-
-class OperationAPIGetFirst(views.APIView):
-    """
-    Получение самой первой операции (по дате старта).
-    """
-    def get(self, request):
-        # order_by('field').first() читаемее, чем order_by('-field').last()
-        operation = Operation.objects.order_by('actual_planned_start').first()
+        # Для PUT/PATCH проверка внутри метода, так как зависит от прав мастера
+        if self.request.method in ['PUT', 'PATCH']:
+                return [permissions.IsAuthenticated()] 
         
-        if not operation:
-            return Response(
-                {"detail": "No operations found."}, 
-                status=status.HTTP_404_NOT_FOUND
-            )
-            
-        serialized = FirstOperationSerializer(operation)
-        return Response(serialized.data)
+        return [permissions.AllowAny()]
 
+    def update(self, request, *args, **kwargs):
+        instance = self.get_object()
+        user = request.user
+        role = getattr(user, 'role', None)
 
-class OperationAPIGetByOrder(generics.ListAPIView):
-    """
-    Получение всех операций по ID заказа.
-    Используем generics.ListAPIView для поддержки пагинации и стандартного поведения.
-    """
-    serializer_class = OperationSerializer
-
-    def get_queryset(self):
-        order_pk = self.kwargs.get('order_pk')
-        return Operation.objects.filter(order_id=order_pk)
-
-
-class OperationAPISetCompleted(views.APIView):
-    """
-    Завершение операции и пересчет графика последующих операций.
-    """
-    permission_classes = [IsAuthenticatedOrReadOnly]
-
-    def put(self, request, pk):
-        prev_operation = get_object_or_404(Operation, pk=pk)
+        # Если Технолог или Админ - разрешаем всё (стандартный update)
+        if role in ['technolog', 'admin']:
+            return super().update(request, *args, **kwargs)
         
-        # Используем транзакцию, чтобы обновление было атомарным (все или ничего)
+        # Если Мастер
+        if role == 'master':
+            # Проверяем, привязан ли мастер к операции
+            if instance.master != user:
+                return Response(
+                    {"detail": "Вы не являетесь мастером данной операции."}, 
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            
+            # Мастер может менять ТОЛЬКО assembly_shop и executors
+            # Проверяем, не пытается ли он изменить что-то другое
+            # allowed_fields = {'assembly_shop', 'executors'}
+            # data_keys = set(request.data.keys())
+            
+            # Если переданы лишние поля (исключая executors, т.к. это m2m и может передаваться списком)
+            # В DRF executors ожидается как список ID, assembly_shop как ID.
+            
+            # Упрощенная логика: используем partial update и игнорируем запрещенные поля,
+            # либо выбрасываем ошибку. По требованиям: "изменить исполнителей и цех может мастер".
+            # Сделаем жесткую фильтрацию данных для мастера.
+            
+            new_data = {}
+            if 'assembly_shop' in request.data:
+                new_data['assembly_shop'] = request.data['assembly_shop']
+            if 'executors' in request.data:
+                new_data['executors'] = request.data['executors']
+                
+            if not new_data:
+                return Response(
+                    {"detail": "Мастер может менять только цех и исполнителей."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            serializer = self.get_serializer(instance, data=new_data, partial=True)
+            serializer.is_valid(raise_exception=True)
+            self.perform_update(serializer)
+            return Response(serializer.data)
+
+        return Response(status=status.HTTP_403_FORBIDDEN)
+    
+class OperationStartAPIView(views.APIView):
+    """
+    PATCH .../operation/{id}/start
+    Фиксирует цех, исполнителей, Actual Start. Пересчитывает цепочку.
+    """
+    permission_classes = [IsMasterOrTechnologist]
+    
+    def patch(self, request, pk):
+        operation = get_object_or_404(Operation, pk=pk)
+        
+        if operation.actual_start:
+            return Response(
+                {"detail": "Operation already started"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Проверка прав мастера (если это мастер, а не технолог/админ)
+        if request.user.role == 'master' and operation.master != request.user:
+            return Response({"detail": "Not assigned master"}, status=status.HTTP_403_FORBIDDEN)
+
+        serializer = OperationStartSerializer(data=request.data)
+        if serializer.is_valid():
+            shop_id = serializer.validated_data['assembly_shop_id']
+            executors_ids = serializer.validated_data['executor_ids']
+            
+            if not executors_ids:
+                return Response(
+                    {"detail": "Executors list cannot be empty"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            shop = get_object_or_404(AssemblyShop, pk=shop_id)
+            executors = Executor.objects.filter(pk__in=executors_ids)
+            if len(executors) != len(executors_ids):
+                return Response({"detail": "Some executors not found"}, status=status.HTTP_400_BAD_REQUEST)
+
+            with transaction.atomic():
+                now = timezone.now()
+                operation.assembly_shop = shop
+                operation.actual_start = now
+                operation.predict_end = now + operation.duration # duration based on planned diff
+                operation.save()
+                
+                operation.executors.set(executors)
+                # Recalculate chain
+                if operation.next_operation:
+                    recalculate_chain(operation, is_ended=False)
+            
+            return Response(OperationSerializer(operation).data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+class OperationEndAPIView(views.APIView):
+    """
+    PATCH .../operation/{id}/end
+    Фиксирует Actual End.
+    """
+    permission_classes = [IsMasterOrTechnologist]
+    
+    def patch(self, request, pk):
+        operation = get_object_or_404(Operation, pk=pk)
+        
+        if not operation.actual_start:
+            return Response(
+                {"detail": "Operation has not been started"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if request.user.role == 'master' and operation.master != request.user:
+            return Response({"detail": "Not assigned master"}, status=status.HTTP_403_FORBIDDEN)
+        
         with transaction.atomic():
-            # 1. Завершаем текущую
-            now = timezone.now()
-            prev_operation.completed = True
-            prev_operation.actual_end = now
-            prev_operation.save()
-            
-            # 2. Ищем следующие операции
-            next_operations = Operation.objects.filter(
-                assembly_shop=prev_operation.assembly_shop,
-                priority__gt=prev_operation.priority
-            ).order_by("priority")
-            
-            if not next_operations.exists():
-                return Response({"id": pk, "message": "Operation completed. No next operations updated."}, status=status.HTTP_200_OK)
-
-            # Переменная для цепочки времени
-            last_finish_time = prev_operation.actual_end
-            operations_to_update = []
-            
-            for index, op in enumerate(next_operations):
-                # Уменьшаем приоритет
-                op.priority -= 1
+                now = timezone.now()
+                operation.actual_end = now
+                # operation.predict_end = now + operation.duration # duration based on planned diff
+                operation.save()
                 
-                # Если это первая операция в очереди (она должна начаться сейчас)
-                if index == 0:
-                    op.actual_start = last_finish_time
-                    op.actual_planned_start = last_finish_time
-                else:
-                    # Остальные просто сдвигаются в плане
-                    op.actual_planned_start = last_finish_time
-                
-                # Вычисляем новый конец.
-                # Важно: duration_minutes() должен возвращать число (int/float)
-                duration = timedelta(minutes=op.duration_minutes())
-                op.actual_planned_end = op.actual_planned_start + duration
-                
-                # Обновляем время для следующего шага цикла
-                last_finish_time = op.actual_planned_end
-                
-                operations_to_update.append(op)
-
-            # Массовое обновление
-            Operation.objects.bulk_update(operations_to_update, [
-                'priority', 
-                'actual_start', 
-                'actual_planned_start', 
-                'actual_planned_end'
-            ])
+                # Recalculate chain
+                if operation.next_operation:
+                    recalculate_chain(operation)
         
-        return Response({"id": pk, "updated_count": len(operations_to_update)}, status=status.HTTP_200_OK)
+        return Response(OperationSerializer(operation).data)
