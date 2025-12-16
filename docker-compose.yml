@@ -27,6 +27,7 @@ services:
       db:
         condition: service_healthy
     volumes:
+      - ./backend:/app
       - ./backend/static:/app/static
     command: >
       sh -c 'until pg_isready -h db -U "$DB_USER"; do sleep 1; done &&
@@ -41,6 +42,7 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     container_name: nginx
+    restart: always
     ports:
       - "80:80"
       - "443:443"
