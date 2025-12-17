@@ -1,10 +1,10 @@
-from datetime import timedelta
+# from datetime import timedelta
 from django.db import transaction
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
 from rest_framework import generics, views, status, permissions
 from rest_framework.response import Response
-from api.models import Operation, AssemblyShop, Executor
+from api.models import Operation, AssemblyShop, Executor, TehLog
 from api.serializers import OperationSerializer, OperationStartSerializer
 from api.permissions import IsTechnologistOrAdmin, IsMasterOrTechnologist
 
@@ -172,6 +172,21 @@ class OperationStartAPIView(views.APIView):
                 if operation.next_operation:
                     recalculate_chain(operation, is_ended=False)
             
+            if request.user.role == 'master':
+                log = TehLog()
+                log.master = operation.master
+                log.operation = operation
+                if operation.actual_start > operation.planned_start:
+                    log.type = TehLog.LogType.LATE_START
+                    diff = operation.actual_start - operation.planned_start
+                    log.info = f"Операция '{operation.name}' в заказе '{operation.order.name}' была начата на {diff.days} день(я) {round(diff.seconds/60/60, 1)} часа(ов) позже плана мастером {operation.master.username}"
+                else:
+                    log.type = TehLog.LogType.AHEAD_START
+                    diff = operation.planned_start - operation.actual_start
+                    log.info = f"Операция '{operation.name}' в заказе '{operation.order.name}' была начата на {diff.days} день(я) {round(diff.seconds/60/60, 1)} часа(ов) раньше плана мастером {operation.master.username}"
+                
+                log.save()
+
             return Response(OperationSerializer(operation).data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
@@ -195,13 +210,28 @@ class OperationEndAPIView(views.APIView):
             return Response({"detail": "Not assigned master"}, status=status.HTTP_403_FORBIDDEN)
         
         with transaction.atomic():
-                now = timezone.now()
-                operation.actual_end = now
-                # operation.predict_end = now + operation.duration # duration based on planned diff
-                operation.save()
+            now = timezone.now()
+            operation.actual_end = now
+            # operation.predict_end = now + operation.duration # duration based on planned diff
+            operation.save()
+            
+            # Recalculate chain
+            if operation.next_operation:
+                recalculate_chain(operation)
                 
-                # Recalculate chain
-                if operation.next_operation:
-                    recalculate_chain(operation)
+            if request.user.role == 'master':
+                log = TehLog()
+                log.master = operation.master
+                log.operation = operation
+                if operation.actual_end > operation.planned_end:
+                    log.type = TehLog.LogType.LATE_STOP
+                    diff = operation.actual_end - operation.planned_end
+                    log.info = f"Операция '{operation.name}' в заказе '{operation.order.name}' была завершена на {diff.days} день(я) {round(diff.seconds/60/60, 1)} часа(ов) позже плана мастером {operation.master.username}"
+                else:
+                    log.type = TehLog.LogType.AHEAD_STOP
+                    diff = operation.planned_end - operation.actual_end
+                    log.info = f"Операция '{operation.name}' в заказе '{operation.order.name}' была завершена на {diff.days} день(я) {round(diff.seconds/60/60, 1)} часа(ов) раньше плана мастером {operation.master.username}"
+                
+                log.save()
         
         return Response(OperationSerializer(operation).data)

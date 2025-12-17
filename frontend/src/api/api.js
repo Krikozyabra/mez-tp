@@ -1,4 +1,4 @@
-const BASE_URL = '/api/v1';
+const BASE_URL = 'http://localhost:8000/api/v1';
 
 // Вспомогательная функция для обработки ответов
 const handleResponse = async (response) => {
@@ -113,6 +113,13 @@ export const api = {
         }).then(handleResponse),
         
         getMe: () => authFetch('/auth/users/me/'),
+    },
+
+    logs: {
+        // Получить последние 5 логов
+        getLatest: () => authFetch('/logs/?limit=5&offset=0'), 
+        // Получить все логи (с поиском)
+        getAll: (search = '') => authFetch(`/logs/?search=${search}&limit=100`), 
     },
 
     orders: {

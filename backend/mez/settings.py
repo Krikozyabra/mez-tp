@@ -32,7 +32,7 @@ ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "").split(",")
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",  # React/Vue dev server
     "http://127.0.0.1:3000",
-    "http://localhost",        # <--- Добавить
+    "http://localhost",
     "http://127.0.0.1",
 ]
 

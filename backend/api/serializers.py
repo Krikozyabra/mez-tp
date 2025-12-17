@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
-from api.models import Order, Operation, AssemblyShop, Executor
+from api.models import Order, Operation, AssemblyShop, Executor, TehLog
 
 User = get_user_model()
 
@@ -44,6 +44,14 @@ class OperationStartSerializer(serializers.Serializer):
         allow_empty=False,
         required=True
     )
+
+class TehLogSerializer(serializers.ModelSerializer):
+    master_name = serializers.CharField(source='master.username', read_only=True)
+    operation_name = serializers.CharField(source='operation.name', read_only=True)
+    
+    class Meta:
+        model = TehLog
+        fields = ['id', 'logged_at', 'master', 'master_name', 'info', 'type', 'operation', 'operation_name']
 
 # Сериализатор для списка мастеров
 class MasterSerializer(serializers.ModelSerializer):
