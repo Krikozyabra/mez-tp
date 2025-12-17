@@ -73,6 +73,23 @@ const OrderFormPage = ({ order, onSave, onCancel, onDelete, focusOperationId }) 
         loadMasters();
     }, []);
 
+    const handleDefaultMasterChange = (e) => {
+        const newMasterId = e.target.value;
+        setDefaultMasterId(newMasterId);
+
+        // Обновляем список операций:
+        // Если операция еще НЕ НАЧАЛАСЬ (нет actualStart), меняем ей мастера.
+        setOperations(prevOps => prevOps.map(op => {
+            if (!op.actualStart) {
+                return { 
+                    ...op, 
+                    masterId: newMasterId 
+                };
+            }
+            return op;
+        }));
+    };
+
     // ... (Скролл и обработчики без изменений) ...
     const itemsRef = useRef(new Map());
     const hasScrolledRef = useRef(false);
@@ -92,9 +109,139 @@ const OrderFormPage = ({ order, onSave, onCancel, onDelete, focusOperationId }) 
         }
     }, [focusOperationId, operations]);
 
-    const handleOperationChange = async (opId, field, value) => {
-        updateOperation(opId, field, value);
+    const addMinutesToDateTime = (date, time, minutes) => {
+        if (!date || !time || !minutes) return { endDate: date, endTime: time };
+
+        const [hours, mins] = time.split(':').map(Number);
+        const d = new Date(date);
+        d.setHours(hours, mins, 0, 0);
+        d.setMinutes(d.getMinutes() + Number(minutes));
+
+        const pad = (v) => String(v).padStart(2, '0');
+
+        return {
+            endDate: d.toISOString().slice(0, 10),
+            endTime: `${pad(d.getHours())}:${pad(d.getMinutes())}`,
+        };
     };
+
+    const diffMinutesBetweenDateTimes = (startDate, startTime, endDate, endTime) => {
+        if (!startDate || !startTime || !endDate || !endTime) return null;
+
+        const [sh, sm] = startTime.split(':').map(Number);
+        const [eh, em] = endTime.split(':').map(Number);
+
+        const start = new Date(startDate);
+        start.setHours(sh, sm, 0, 0);
+
+        const end = new Date(endDate);
+        end.setHours(eh, em, 0, 0);
+
+        const diffMs = end - start;
+        if (diffMs < 0) return 0;
+
+        return Math.round(diffMs / 60000);
+    };
+
+const handleOperationChange = (opId, field, value) => {
+    setOperations(prevOps => {
+        let ops = prevOps.map(op =>
+            op.id === opId ? { ...op, [field]: value } : op
+        );
+
+        const currentOp = ops.find(op => op.id === opId);
+        if (!currentOp) return ops;
+
+        // --- 1. МЕНЯЕТСЯ НАЧАЛО → ПЕРЕСЧЁТ КОНЦА ---
+        if (field === 'startDate' || field === 'startTime') {
+            if (currentOp.durationMinutes) {
+                const { endDate, endTime } = addMinutesToDateTime(
+                    currentOp.startDate,
+                    currentOp.startTime,
+                    currentOp.durationMinutes
+                );
+                ops = ops.map(op =>
+                    op.id === opId
+                        ? { ...op, endDate, endTime }
+                        : op
+                );
+            }
+        }
+
+        // --- 2. МЕНЯЕТСЯ DURATION → ПЕРЕСЧЁТ КОНЦА ---
+        if (field === 'durationMinutes') {
+            if (currentOp.startDate && currentOp.startTime) {
+                const { endDate, endTime } = addMinutesToDateTime(
+                    currentOp.startDate,
+                    currentOp.startTime,
+                    value
+                );
+                ops = ops.map(op =>
+                    op.id === opId
+                        ? { ...op, durationMinutes: value, endDate, endTime }
+                        : op
+                );
+            }
+        }
+
+        // --- 3. МЕНЯЕТСЯ КОНЕЦ → ПЕРЕСЧЁТ DURATION ---
+        if (field === 'endDate' || field === 'endTime') {
+            const duration = diffMinutesBetweenDateTimes(
+                currentOp.startDate,
+                currentOp.startTime,
+                currentOp.endDate,
+                currentOp.endTime
+            );
+            if (duration !== null) {
+                ops = ops.map(op =>
+                    op.id === opId
+                        ? { ...op, durationMinutes: duration }
+                        : op
+                );
+            }
+
+            // --- 4. Обновляем всех детей рекурсивно ---
+            const updateChildren = (parentId, parentEndDate, parentEndTime) => {
+                const children = ops.filter(op => String(op.previousOperationId) === String(parentId));
+                children.forEach(child => {
+                    if (!child.durationMinutes) return;
+                    const { endDate, endTime } = addMinutesToDateTime(
+                        parentEndDate,
+                        parentEndTime,
+                        child.durationMinutes
+                    );
+                    ops = ops.map(op =>
+                        op.id === child.id
+                            ? { ...op, startDate: parentEndDate, startTime: parentEndTime, endDate, endTime }
+                            : op
+                    );
+                    // Рекурсивно обновляем детей этого ребенка
+                    updateChildren(child.id, endDate, endTime);
+                });
+            };
+            updateChildren(currentOp.id, currentOp.endDate, currentOp.endTime);
+        }
+
+        // --- 5. Изменение зависимости ---
+        if (field === 'previousOperationId') {
+            const parentOp = ops.find(op => String(op.id) === String(value));
+            if (parentOp && parentOp.endDate && parentOp.endTime && currentOp.durationMinutes) {
+                const { endDate, endTime } = addMinutesToDateTime(
+                    parentOp.endDate,
+                    parentOp.endTime,
+                    currentOp.durationMinutes
+                );
+                ops = ops.map(op =>
+                    op.id === opId
+                        ? { ...op, startDate: parentOp.endDate, startTime: parentOp.endTime, endDate, endTime }
+                        : op
+                );
+            }
+        }
+
+        return ops;
+    });
+};
 
     const checkIsDirty = (currentOp) => {
         const original = originalOperations.find(op => op.id === currentOp.id);
@@ -162,24 +309,12 @@ const OrderFormPage = ({ order, onSave, onCancel, onDelete, focusOperationId }) 
                 : await api.operations.update(operation.id, payload);
 
             const updatedOp = { ...operation, id: savedOpData.id };
-            
-            // Если у текущей операции изменилась зависимость, нужно обновить связь на бэкенде
-            // (Так как mapOperationToBackend посылает next_operation: null)
-            // Это сложный момент для одиночного сохранения. 
-            // Если зависимость была изменена ТОЛЬКО у этой операции, попробуем обновить связь.
             const originalOp = originalOperations.find(o => o.id === operation.id);
             const oldPrev = originalOp ? String(originalOp.previousOperationId || '') : '';
             const newPrev = String(operation.previousOperationId || '');
 
             if (oldPrev !== newPrev && newPrev) {
-                 // Находим ту операцию, которая теперь должна ссылаться на эту (или наоборот).
-                 // Логика next_operation подразумевает: "Эта операция является следующей для..."
-                 // В нашей модели: OpA.next_operation = OpB (значит OpB зависит от OpA).
-                 // previousOperationId = ID OpA.
-                 // Значит нам нужно найти OpA (newPrev) и поставить ей next_operation = savedOpData.id
-                 
-                 // Простая попытка линковки для одиночного сохранения:
-                 await api.operations.update(newPrev, { next_operation: savedOpData.id });
+                 await api.operations.update(newPrev);
             }
 
             setOperations(prev => prev.map(op => op.id === operation.id ? updatedOp : op));
@@ -220,23 +355,9 @@ const OrderFormPage = ({ order, onSave, onCancel, onDelete, focusOperationId }) 
             const idMap = {}; 
             const savedOperations = [];
 
-            const oldDefaultMaster = order?.defaultMasterId ? String(order.defaultMasterId) : '';
-            const newDefaultMaster = defaultMasterId ? String(defaultMasterId) : '';
-            const isMasterChanged = oldDefaultMaster !== newDefaultMaster;
-
             for (let i = 0; i < operations.length; i++) {
                 const op = operations[i];
                 let payload = mapOperationToBackend(op, orderId, i);
-                
-                if (isMasterChanged || isNewOrderOnBackend) {
-                    if (defaultMasterId) {
-                        payload.master = parseInt(defaultMasterId);
-                        payload.needs_master_check = true;
-                    } else {
-                        payload.master = null;
-                        payload.needs_master_check = false;
-                    }
-                }
                 
                 const isOpNew = typeof op.id === 'string' && op.id.length > 20;
                 let savedOp;
@@ -247,29 +368,19 @@ const OrderFormPage = ({ order, onSave, onCancel, onDelete, focusOperationId }) 
                 }
                 
                 idMap[op.id] = savedOp.id;
-                
                 savedOperations.push({
                     ...savedOp,
                     _ui_previousOperationId: op.previousOperationId 
                 });
             }
 
-            // 3. Линковка (Linked List)
-            // Сначала всем сбрасываем next_operation (чтобы избежать конфликтов unique), 
-            // если бы мы меняли порядок, но для упрощения просто перезаписываем.
-            // Но в идеале:
-            // 1. Проход: next_operation = null для всех
-            // 2. Проход: проставить правильные next_operation
-            
-            // Простой вариант (простановка):
+            // 3. Линковка (без изменений)
             for (const currentOp of savedOperations) {
                 const prevUiId = currentOp._ui_previousOperationId;
                 if (prevUiId) {
                     const prevRealId = idMap[prevUiId] || prevUiId;
                     if (prevRealId) {
-                        await api.operations.update(prevRealId, { 
-                            next_operation: currentOp.id 
-                        });
+                        await api.operations.update(prevRealId);
                     }
                 }
             }
@@ -294,7 +405,7 @@ const OrderFormPage = ({ order, onSave, onCancel, onDelete, focusOperationId }) 
     const handleSaveOrderClick = async () => {
         const savedOrderId = await persistData();
         if (savedOrderId) {
-            // === ИЗМЕНЕНИЕ: Не вызываем onSave(), чтобы не закрывать окно ===
+            // Не вызываем onSave(), чтобы не закрывать окно ===
             // onSave({ id: savedOrderId }); 
             alert('Заказ и все операции успешно сохранены!');
         }
@@ -303,9 +414,10 @@ const OrderFormPage = ({ order, onSave, onCancel, onDelete, focusOperationId }) 
     const handleAddOperationClick = async () => {
         if (typeof order?.id === 'string' && order.id.length > 20) {
              const saved = await persistData();
-             if (saved) addOperation();
+             if (saved) addOperation(defaultMasterId);
         } else {
-            addOperation();
+            // Передаем текущий дефолтный мастер при добавлении
+            addOperation(defaultMasterId);
         }
     };
 
@@ -342,7 +454,7 @@ const OrderFormPage = ({ order, onSave, onCancel, onDelete, focusOperationId }) 
 
                     <div className={styles.section}>
                          <label className={styles.label}>Мастер по умолчанию</label>
-                         <select className={styles.input} value={defaultMasterId} onChange={e => setDefaultMasterId(e.target.value)}>
+                         <select className={styles.input} value={defaultMasterId} onChange={handleDefaultMasterChange}>
                             <option value="">-- Не назначен --</option>
                             {mastersList.map(m => <option key={m.id} value={m.id}>{m.full_name || m.username}</option>)}
                          </select>

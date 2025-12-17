@@ -18,6 +18,9 @@ class CustomUser(AbstractUser):
         blank=True,
         null=True
     )
+    
+    def __str__(self):
+        return str(self.username)
 
 class AssemblyShop(models.Model):
     name = models.CharField(max_length=255, verbose_name="Название цеха")
@@ -87,13 +90,13 @@ class Operation(models.Model):
         verbose_name="Ответственный мастер"
     )
     
-    next_operation = models.OneToOneField(
+    previous_operation = models.ForeignKey(
         'self', 
         on_delete=models.SET_NULL, 
         null=True, 
         blank=True, 
-        related_name='previous_operation',
-        verbose_name="Следующая (зависимая) операция"
+        related_name='next_operations',
+        verbose_name="Предыдущая операция"
     )
 
     planned_start = models.DateTimeField(verbose_name="Плановая дата начала")
@@ -119,9 +122,10 @@ class Operation(models.Model):
             if not self.master and self.order.default_master:
                 self.master = self.order.default_master
                 
-        if self.pk == self.next_operation:
-            self.next_operation = None
-
+        # Проверка на цикличность (самого себя)
+        if self.pk and self.previous_operation and self.pk == self.previous_operation.pk:
+            self.previous_operation = None
+        
         super().save(*args, **kwargs)
     
     @property
@@ -147,3 +151,22 @@ class Operation(models.Model):
         verbose_name_plural = "Операции"
         ordering = ['predict_start']
         
+class TehLog(models.Model):
+    class LogType(models.IntegerChoices):
+        LATE_START = 0
+        LATE_STOP = 1
+        AHEAD_START = 2
+        AHEAD_STOP = 3
+    
+    logged_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
+    master = models.ForeignKey(CustomUser, on_delete=models.CASCADE, verbose_name="Мастер")
+    info = models.CharField(max_length=256, verbose_name="Информация")
+    type = models.IntegerField(choices=LogType, verbose_name="Тип лога")
+    operation = models.ForeignKey(Operation, on_delete=models.CASCADE, verbose_name="Операция")
+    
+    def __str__(self):
+        return str(TehLog.LogType.choices[self.type][1]) + " " +str(self.operation)
+    
+    class Meta:
+        verbose_name = "Логи"
+        verbose_name_plural = "Логи"

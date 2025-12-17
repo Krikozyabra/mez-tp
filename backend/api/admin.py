@@ -3,7 +3,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.contrib.auth.admin import UserAdmin
 from django.db.models import Count, Q
-from .models import AssemblyShop, Executor, Order, Operation
+from .models import AssemblyShop, Executor, Order, Operation, TehLog
 
 # Получаем вашу кастомную модель пользователя
 User = get_user_model()
@@ -55,7 +55,7 @@ class ExecutorAdmin(admin.ModelAdmin):
 class OperationInline(admin.TabularInline):
     model = Operation
     extra = 1
-    fields = ("name", "planned_start", "planned_end", "master", "next_operation")
+    fields = ("name", "planned_start", "planned_end", "master", "previous_operation")
     fk_name = "order"
 
 # 4. Заказы
@@ -141,7 +141,7 @@ class OperationAdmin(admin.ModelAdmin):
                     "assembly_shop",
                     "executors",
                     "master",
-                    "next_operation",
+                    "previous_operation",
                 )
             },
         ),
@@ -189,20 +189,12 @@ class OperationAdmin(admin.ModelAdmin):
 
     get_status_display.short_description = "Статус"
 
+@admin.register(TehLog)
+class TehLogAdmin(admin.ModelAdmin):
+    list_display = ("logged_at", "info", "type", "operation", "master")
+    list_filter = ("logged_at",)
 
 # Настройка заголовков админки
 admin.site.site_header = "Панель управления производством"
 admin.site.site_title = "Админ-панель MEZ"
 admin.site.index_title = "Управление данными системы"
-
-# Опционально: управление группами (можно убрать, если роли полностью заменяют группы)
-# class GroupAdmin(admin.ModelAdmin):
-#     list_display = ("name", "get_users_count")
-#     filter_horizontal = ("permissions",)
-
-#     def get_users_count(self, obj):
-#         return obj.user_set.count()
-#     get_users_count.short_description = "Количество пользователей"
-
-# admin.site.unregister(Group)
-# admin.site.register(Group, GroupAdmin)

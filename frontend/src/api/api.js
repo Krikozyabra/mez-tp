@@ -1,4 +1,5 @@
-const BASE_URL = '/api/v1';
+// const BASE_URL = 'http://127.0.0.1:8000/api/v1'; // dev
+const BASE_URL = '/api/v1'; // prod
 
 // Вспомогательная функция для обработки ответов
 const handleResponse = async (response) => {
@@ -11,7 +12,6 @@ const handleResponse = async (response) => {
         }
     }
     
-    // Пытаемся достать текст ошибки
     let errorDetail = `Request failed: ${response.status}`;
     try {
         const errJson = await response.json();
@@ -19,13 +19,11 @@ const handleResponse = async (response) => {
         else if (typeof errJson === 'object') errorDetail = JSON.stringify(errJson);
     } catch (e) {}
 
-    // Выбрасываем ошибку с информацией о статусе, чтобы можно было отловить 401 выше
     const error = new Error(errorDetail);
     error.status = response.status;
     throw error;
 };
 
-// Функция для получения заголовков (включая токен)
 const getHeaders = () => {
     const token = localStorage.getItem('accessToken');
     return {
@@ -34,13 +32,9 @@ const getHeaders = () => {
     };
 };
 
-/**
- * Обертка над fetch с автоматическим обновлением токена
- */
 const authFetch = async (endpoint, options = {}) => {
     const url = `${BASE_URL}${endpoint}`;
     
-    // 1. Делаем первый запрос
     const config = {
         ...options,
         headers: {
@@ -51,13 +45,11 @@ const authFetch = async (endpoint, options = {}) => {
 
     let response = await fetch(url, config);
 
-    // 2. Если получили 401 (Unauthorized), пробуем обновить токен
     if (response.status === 401) {
         const refreshToken = localStorage.getItem('refreshToken');
         
         if (refreshToken) {
             try {
-                // Запрос на обновление токена
                 const refreshResponse = await fetch(`${BASE_URL}/auth/refresh/`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -67,32 +59,27 @@ const authFetch = async (endpoint, options = {}) => {
                 if (refreshResponse.ok) {
                     const data = await refreshResponse.json();
                     
-                    // Сохраняем новый access токен
                     localStorage.setItem('accessToken', data.access);
-                    // Если бэкенд возвращает новый refresh токен (при ротации), сохраняем и его
                     if (data.refresh) {
                         localStorage.setItem('refreshToken', data.refresh);
                     }
 
-                    // 3. Повторяем исходный запрос с новым токеном
                     const newConfig = {
                         ...options,
                         headers: {
-                            ...getHeaders(), // Заголовки возьмутся заново из localStorage
+                            ...getHeaders(),
                             ...options.headers
                         }
                     };
                     response = await fetch(url, newConfig);
                 } else {
-                    // Если refresh токен тоже невалиден — полный логаут
                     console.error("Refresh token expired");
                     localStorage.removeItem('accessToken');
                     localStorage.removeItem('refreshToken');
-                    window.location.href = '/'; // Или вызов метода logout из контекста, если бы он был тут доступен
+                    window.location.href = '/'; 
                     throw new Error('Session expired');
                 }
             } catch (error) {
-                // Ошибка сети или другая проблема при обновлении
                 localStorage.removeItem('accessToken');
                 localStorage.removeItem('refreshToken');
                 throw error;
@@ -105,7 +92,6 @@ const authFetch = async (endpoint, options = {}) => {
 
 export const api = {
     auth: {
-        // Login используем обычный fetch, чтобы не зациклить 401
         login: (username, password) => fetch(`${BASE_URL}/auth/`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -113,6 +99,11 @@ export const api = {
         }).then(handleResponse),
         
         getMe: () => authFetch('/auth/users/me/'),
+    },
+
+    logs: {
+        getLatest: () => authFetch('/logs/?limit=5&offset=0'), 
+        getAll: (search = '') => authFetch(`/logs/?search=${search}&limit=100`), 
     },
 
     orders: {
@@ -141,6 +132,9 @@ export const api = {
         }),
     },
     operations: {
+        getByOrder: (orderId) => authFetch(`/operation/by_order/${orderId}/`),
+        // getFirst: () => authFetch(`/operation/first/`),
+
         create: (data) => authFetch(`/operation/`, { 
             method: 'POST', 
             body: JSON.stringify(data) 

@@ -221,11 +221,17 @@ const MainPage = ({ onCreateOrder }) => {
     } catch (error) { alert("Не удалось создать заказ: " + error.message); }
   };
 
-  const handleCloseOrderForm = () => {
+  // Функция закрытия формы
+  const handleCloseOrderForm = async () => { // Делаем async
     setIsOrderFormOpen(false);
     setOrderForEdit(null);
     setFocusOperationId(null);
     updateUrlParams(null);
+    
+    // Обновляем список, чтобы увидеть изменения (например, новые мастера)
+    await fetchOrders(); 
+    // Также можно обновить линию времени, если даты поменялись
+    await fetchTimelineStart();
   };
 
   const handleSelectOperation = (order, operation) => {
