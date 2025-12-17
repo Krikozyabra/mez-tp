@@ -7,7 +7,7 @@ from rest_framework.pagination import PageNumberPagination
 from api.models import Operation, AssemblyShop, Executor, TehLog
 from api.serializers import OperationSerializer, OperationStartSerializer
 from api.permissions import IsTechnologistOrAdmin, IsMasterOrTechnologist
-from api.utils import sort_operations_chain, recalculate_chain
+from api.utils import sort_operations_chain, recalculate_predict_chain
 
 
 class StandardResultsSetPagination(PageNumberPagination):
