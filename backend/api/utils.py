@@ -1,5 +1,8 @@
 from datetime import datetime, timezone as dt_timezone
 from collections import defaultdict
+from django.core.management.base import BaseCommand
+from django.utils import timezone
+from .models import Operation
 
 def sort_operations_chain(operations):
     """
@@ -61,44 +64,48 @@ def sort_operations_chain(operations):
 
     return sorted_ops
 
-def recalculate_chain(start_operation):
+def recalculate_predict_chain(start_operation):
     """
-    Обновляет predict_start/end для всех зависимых операций вниз по цепочке.
-    Использует поиск в ширину (BFS), так как одна операция может быть 
-    родительской для нескольких (через related_name='next_operations').
+    Рекурсивно обновляет predict_start/predict_end для всех зависимых операций
+    вниз по цепочке.
     """
-    # Начинаем с детей текущей операции, так как сама операция уже обновлена
     queue = list(start_operation.next_operations.all())
-    
     visited = set()
     visited.add(start_operation.id)
 
     while queue:
         current_op = queue.pop(0)
-        
         if current_op.id in visited:
             continue
         visited.add(current_op.id)
 
-        # Родитель текущей операции (previous_operation)
         parent = current_op.previous_operation
-        
         if not parent:
             continue
 
-        # Берем дату окончания родителя как старт для текущей
-        # Приоритет: ФАКТ -> ПРОГНОЗ -> ПЛАН
-        reference_end = parent.actual_end or parent.predict_end or parent.planned_end
-        
+        reference_end = parent.predict_end or parent.actual_end or parent.planned_end
         if reference_end:
             current_op.predict_start = reference_end
-            # duration - это property модели
-            current_op.predict_end = current_op.predict_start + current_op.duration
-            
-            # Сохраняем изменения
+            current_op.predict_end = reference_end + current_op.duration
             current_op.save(update_fields=['predict_start', 'predict_end'])
             
-            # Добавляем детей текущей операции в очередь на пересчет
-            # Используем related_name='next_operations'
-            children = current_op.next_operations.all()
-            queue.extend(children)
+            queue.extend(current_op.next_operations.all())
+
+class Command(BaseCommand):
+    help = "Ежедневное обновление predict_start/predict_end операций"
+
+    def handle(self, *args, **kwargs):
+        today = timezone.localdate()  # только дата, без времени
+        # Все операции без previous_operation, не начавшиеся (actual_start = None)
+        root_operations = Operation.objects.filter(previous_operation__isnull=True, actual_start__isnull=True)
+        
+        for op in root_operations:
+            if op.predict_start and op.predict_start.date() < today:
+                # Сдвигаем predict_start на сегодня
+                op.predict_start = timezone.make_aware(
+                    datetime.combine(today, op.predict_start.time())
+                )
+                op.predict_end = op.predict_start + op.duration
+                op.save(update_fields=['predict_start', 'predict_end'])
+                # Обновляем всех потомков рекурсивно
+                recalculate_predict_chain(op)
