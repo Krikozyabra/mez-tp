@@ -1,10 +1,9 @@
-import React, { memo } from 'react';
+import { memo } from 'react';
 import styles from '../pages/OrderFormPage.module.css';
 
 const OperationCard = ({ 
     operation, 
     index,
-    // Добавляем значения по умолчанию, чтобы избежать undefined.map
     masters = [], 
     otherOperations = [], 
     onChange, 
@@ -13,15 +12,17 @@ const OperationCard = ({
     isDirty
 }) => {
     const isCompleted = !!operation.actualEnd;
-    
-    // Защита: если otherOperations вдруг придет null/undefined, используем пустой массив
+    const hasDependency = !!operation.previousOperationId;
+
     const safeOtherOperations = otherOperations || [];
-    
-    // Фильтруем список: исключаем саму себя из списка родителей
-    const availableParents = safeOtherOperations.filter(op => op.id !== operation.id);
+    // Исключаем себя и исключаем тех, кто ссылается на нас (чтобы избежать прямых циклов в UI)
+    const availableParents = safeOtherOperations.filter(op => 
+        op.id !== operation.id && op.previousOperationId !== String(operation.id)
+    );
 
     return (
         <div className={styles.operationCard}>
+            {/* Header ... без изменений */}
             <div className={styles.operationHeader}>
                 <h3 className={styles.operationTitle}>
                     Этап {index + 1}
@@ -48,7 +49,7 @@ const OperationCard = ({
             <div className={styles.operationFields}>
                 <div className={styles.fieldRow}>
                     <div className={styles.field}>
-                        <label className={styles.fieldLabel}>Название операции</label>
+                        <label className={styles.fieldLabel}>Название</label>
                         <input
                             type="text"
                             className={styles.fieldInput}
@@ -57,20 +58,10 @@ const OperationCard = ({
                             disabled={isCompleted}
                         />
                     </div>
-                    <div className={styles.field}>
-                        <label className={styles.fieldLabel}>Описание операции</label>
-                        <input
-                            type="text"
-                            className={styles.fieldInput}
-                            value={operation.description}
-                            onChange={(e) => onChange(operation.id, 'description', e.target.value)}
-                            disabled={isCompleted}
-                        />
-                    </div>
                     
-                    {/* Выбор зависимости (Предыдущая операция) */}
+                    {/* Select Зависимости */}
                     <div className={styles.field}>
-                        <label className={styles.fieldLabel}>Зависит от (предыдущий этап)</label>
+                        <label className={styles.fieldLabel}>Зависит от</label>
                         <select
                             className={styles.fieldSelect}
                             value={operation.previousOperationId || ""}
@@ -78,11 +69,10 @@ const OperationCard = ({
                             disabled={isCompleted}
                             style={{borderColor: '#3b82f6', background: '#eff6ff'}}
                         >
-                            <option value="">-- Нет (Параллельно / Первая) --</option>
-                            {/* Используем безопасный массив с проверкой ?. */}
-                            {availableParents?.map(op => (
+                            <option value="">-- Нет (Старт 08:00) --</option>
+                            {availableParents.map(op => (
                                 <option key={op.id} value={op.id}>
-                                    {op.name} {String(op.id).length < 10 ? `(#${op.id})` : '(нов.)'}
+                                    {op.name}
                                 </option>
                             ))}
                         </select>
@@ -90,29 +80,73 @@ const OperationCard = ({
                 </div>
 
                 <div className={styles.fieldRow}>
+                    {/* Плановое начало: ДАТА + ВРЕМЯ */}
                     <div className={styles.field}>
-                        <label className={styles.fieldLabel}>Плановое начало</label>
-                        <input
-                            type="date"
-                            className={styles.fieldInput}
-                            value={operation.startDate}
-                            onChange={(e) => onChange(operation.id, 'startDate', e.target.value)}
-                            disabled={isCompleted}
-                        />
+                        <label className={styles.fieldLabel}>Начало</label>
+                        <div style={{display: 'flex', gap: '8px'}}>
+                            <input
+                                type="date"
+                                className={styles.fieldInput}
+                                value={operation.startDate}
+                                onChange={(e) => onChange(operation.id, 'startDate', e.target.value)}
+                                disabled={isCompleted || hasDependency}
+                                style={{flex: 2}}
+                            />
+                            <input
+                                type="time"
+                                className={styles.fieldInput}
+                                value={operation.startTime}
+                                onChange={(e) => onChange(operation.id, 'startTime', e.target.value)}
+                                disabled={isCompleted || hasDependency}
+                                style={{flex: 1}}
+                            />
+                        </div>
                     </div>
+
+                    {/* Плановое завершение: ДАТА + ВРЕМЯ */}
                     <div className={styles.field}>
-                        <label className={styles.fieldLabel}>Плановое завершение</label>
-                        <input
-                            type="date"
-                            className={styles.fieldInput}
-                            value={operation.endDate}
-                            onChange={(e) => onChange(operation.id, 'endDate', e.target.value)}
-                            disabled={isCompleted}
-                        />
+                        <label className={styles.fieldLabel}>Завершение</label>
+                        <div style={{display: 'flex', gap: '8px'}}>
+                            <input
+                                type="date"
+                                className={styles.fieldInput}
+                                value={operation.endDate}
+                                onChange={(e) => onChange(operation.id, 'endDate', e.target.value)}
+                                disabled={isCompleted}
+                                style={{flex: 2}}
+                            />
+                            <input
+                                type="time"
+                                className={styles.fieldInput}
+                                value={operation.endTime}
+                                onChange={(e) => onChange(operation.id, 'endTime', e.target.value)}
+                                disabled={isCompleted}
+                                style={{flex: 1}}
+                            />
+                        </div>
                     </div>
                     
+                    {/* Длительность */}
+                    <div className={styles.field} style={{maxWidth: '100px'}}>
+                        <label className={styles.fieldLabel}>Мин.</label>
+                        <input
+                            type="number"
+                            className={styles.fieldInput}
+                            value={operation.durationMinutes || ''}
+                            onChange={(e) => onChange(operation.id, 'durationMinutes', e.target.value)}
+                            min="0"
+                            disabled={isCompleted}
+                        />
+                    </div>
+                </div>
+                {hasDependency && (
+                            <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '4px' }}>
+                                Начало определяется предыдущей операцией
+                            </div>
+                        )}
+                <div className={styles.fieldRow}>
                     <div className={styles.field}>
-                        <label className={styles.fieldLabel}>Ответственный / Контроль</label>
+                        <label className={styles.fieldLabel}>Мастер</label>
                         <select
                             className={styles.fieldSelect}
                             value={operation.masterId || ""}
@@ -120,13 +154,22 @@ const OperationCard = ({
                             disabled={isCompleted}
                         >
                             <option value="">Технолог</option>
-                            {/* Добавлена проверка masters?.map */}
                             {masters?.map(m => (
                                 <option key={m.id} value={m.id}>
                                     {m.full_name || m.username}
                                 </option>
                             ))}
                         </select>
+                    </div>
+                    <div className={styles.field}>
+                        <label className={styles.fieldLabel}>Описание</label>
+                        <input
+                            type="text"
+                            className={styles.fieldInput}
+                            value={operation.description}
+                            onChange={(e) => onChange(operation.id, 'description', e.target.value)}
+                            disabled={isCompleted}
+                        />
                     </div>
                 </div>
             </div>

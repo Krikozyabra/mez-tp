@@ -9,7 +9,8 @@ from .views.operation_views import (
     OperationListCreateAPIView,
     OperationDetailUpdateDeleteAPIView,
     OperationStartAPIView,
-    OperationEndAPIView
+    OperationEndAPIView,
+    OperationAPIGetByOrder
 )
 from .views.log_views import TehLogViewSet
 from .views.workshop_views import AssemblyShopAPIList, AssemblyShopAPIUpdate
@@ -35,10 +36,12 @@ urlpatterns = [
     # Operations
     path('operation/', OperationListCreateAPIView.as_view()),
     path('operation/<int:pk>/', OperationDetailUpdateDeleteAPIView.as_view()),
+    path('operation/by_order/<int:order_pk>/', OperationAPIGetByOrder.as_view()),
 
     # Operation Actions
     path('operation/<int:pk>/start/', OperationStartAPIView.as_view()),
     path('operation/<int:pk>/end/', OperationEndAPIView.as_view()),
+    
 
     # Workshops (Старые Views оставлены, если они нужны для справочников)
     path('workshops/', AssemblyShopAPIList.as_view()),

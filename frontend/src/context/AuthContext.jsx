@@ -52,7 +52,6 @@ export const AuthProvider = ({ children }) => {
         try {
             // 1. Получаем токены
             const data = await api.auth.login(username, password);
-            console.log(data)
             // Сохраняем токены
             localStorage.setItem('accessToken', data.access);
             localStorage.setItem('refreshToken', data.refresh);

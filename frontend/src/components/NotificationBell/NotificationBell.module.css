@@ -10,10 +10,12 @@
     padding: 8px;
     border-radius: 50%;
     transition: background 0.2s;
+    color: #475569;
 }
 
 .bellButton:hover {
-    background: #f1f5f9;
+    background: #e2e8f0;
+    color: #0f172a;
 }
 
 .bellIcon {

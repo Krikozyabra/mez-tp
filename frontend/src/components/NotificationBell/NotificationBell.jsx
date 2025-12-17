@@ -10,13 +10,11 @@ const NotificationBell = () => {
     const [showAllModal, setShowAllModal] = useState(false);
     const dropdownRef = useRef(null);
 
-    // Загрузка последних 5 логов
     const fetchLatestLogs = async () => {
         try {
             const data = await api.logs.getLatest();
             const results = data.results || data || [];
             setLogs(results.slice(0, 5));
-            // Логику "непрочитанности" можно усложнить, пока просто: если есть логи - есть уведомления
             if (results.length > 0) setHasUnread(true);
         } catch (e) {
             console.error(e);
@@ -25,12 +23,10 @@ const NotificationBell = () => {
 
     useEffect(() => {
         fetchLatestLogs();
-        // Можно добавить поллинг (интервал) раз в минуту
         const interval = setInterval(fetchLatestLogs, 60000);
         return () => clearInterval(interval);
     }, []);
 
-    // Закрытие дропдауна при клике вне
     useEffect(() => {
         const handleClickOutside = (event) => {
             if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
@@ -44,16 +40,30 @@ const NotificationBell = () => {
     const toggleDropdown = () => {
         setIsOpen(!isOpen);
         if (!isOpen) {
-            // При открытии обновляем список
             fetchLatestLogs();
-            setHasUnread(false); // Сбрасываем "непрочитанность" при открытии
+            setHasUnread(false);
         }
     };
 
     return (
         <div className={styles.container} ref={dropdownRef}>
-            <button className={styles.bellButton} onClick={toggleDropdown}>
-                <span className={styles.bellIcon}>🔔</span>
+            <button className={styles.bellButton} onClick={toggleDropdown} title="Уведомления">
+                <svg 
+                    xmlns="http://www.w3.org/2000/svg" 
+                    width="24" 
+                    height="24" 
+                    viewBox="0 0 24 24" 
+                    fill="none" 
+                    stroke="currentColor" 
+                    strokeWidth="2" 
+                    strokeLinecap="round" 
+                    strokeLinejoin="round"
+                    className={styles.bellIconSvg}
+                >
+                    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                    <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+                </svg>
+                
                 {hasUnread && <span className={styles.badge} />}
             </button>
 

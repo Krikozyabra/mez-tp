@@ -55,7 +55,7 @@ class ExecutorAdmin(admin.ModelAdmin):
 class OperationInline(admin.TabularInline):
     model = Operation
     extra = 1
-    fields = ("name", "planned_start", "planned_end", "master", "next_operation")
+    fields = ("name", "planned_start", "planned_end", "master", "previous_operation")
     fk_name = "order"
 
 # 4. Заказы
@@ -141,7 +141,7 @@ class OperationAdmin(admin.ModelAdmin):
                     "assembly_shop",
                     "executors",
                     "master",
-                    "next_operation",
+                    "previous_operation",
                 )
             },
         ),
