@@ -58,6 +58,7 @@ INSTALLED_APPS = [
     "corsheaders",
     "django_filters",
     "api.apps.ApiConfig",
+    "drf_yasg",
 ]
 
 MIDDLEWARE = [
