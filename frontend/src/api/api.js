@@ -1,5 +1,5 @@
-const BASE_URL = 'http://127.0.0.1:8000/api/v1'; // dev
-// const BASE_URL = '/api/v1'; // prod
+// const BASE_URL = 'http://127.0.0.1:8000/api/v1'; // dev
+const BASE_URL = '/api/v1'; // prod
 
 // Вспомогательная функция для обработки ответов
 const handleResponse = async (response) => {
