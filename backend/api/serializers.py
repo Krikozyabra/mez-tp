@@ -121,3 +121,38 @@ class ExecutorSerializer(serializers.ModelSerializer):
     class Meta:
         model = Executor
         fields = '__all__'
+        
+class AggregatedTaskSerializer(serializers.ModelSerializer):
+    order_name = serializers.CharField(source='order.name', read_only=True)
+    order_id = serializers.IntegerField(source='order.id', read_only=True)
+    
+    class Meta:
+        model = Operation
+        fields = [
+            'id', 
+            'name', 
+            'order_id', 
+            'order_name', 
+            'planned_start', 
+            'planned_end', 
+            'predict_start',
+            'predict_end',
+            'actual_start', 
+            'actual_end',
+            'status'
+        ]
+
+# Сериализатор исполнителя с вложенным списком задач
+class ExecutorAggregationSerializer(serializers.ModelSerializer):
+    # operation_set - это стандартное имя обратной связи для ManyToMany, 
+    # если не указан related_name в модели Operation.
+    # Если в модели Operation поле executors имеет related_name, используйте его.
+    tasks = AggregatedTaskSerializer(source='operation_set', many=True, read_only=True)
+    
+    # Доп. поля для статистики
+    total_tasks = serializers.IntegerField(read_only=True)
+    active_tasks_count = serializers.IntegerField(read_only=True)
+
+    class Meta:
+        model = Executor
+        fields = ['id', 'full_name', 'total_tasks', 'active_tasks_count', 'tasks']

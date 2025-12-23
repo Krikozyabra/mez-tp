@@ -17,49 +17,42 @@ const parseDateTimeString = (str) => {
     };
 };
 
+const mapOperationForGantt = (op, orderTitle, orderId) => ({
+    id: op.id,
+        name: op.name,
+        // Для Ганта берем полную строку даты-времени
+        originalPlannedStart: op.planned_start,
+        originalPlannedEnd: op.planned_end,
+        
+        startDate: op.actual_start || op.planned_start,
+        endDate: op.actual_end || op.planned_end,
+        
+        predictStart: op.predict_start,
+        predictEnd: op.predict_end,
+        actualStart: op.actual_start,
+        actualEnd: op.actual_end,
+        
+        completed: op.status === "completed",
+        inProgress: op.status === "in_progress",
+        orderTitle: orderTitle,
+        orderId: orderId, 
+        workshopName: op.assembly_shop_name || '-',
+        masterName: op.master_name || '-',
+        masterId: op.master, 
+});
+
 // Преобразование детального заказа с бэкенда в формат формы
-export const mapBackendDetailToForm = (apiData) => ({
-    id: apiData.id,
-    title: apiData.name,
-    description: apiData.description,
-    deadline: parseDateTimeString(apiData.deadline).date,
-    defaultMasterId: apiData.default_master ? String(apiData.default_master) : '',
-    createdAt: apiData.created_at,
+export const mapBackendDetailToForm = (backendOrder) => ({
+    id: backendOrder.id,
+    title: backendOrder.name,
+    description: backendOrder.description,
+    deadline: parseDateTimeString(backendOrder.deadline).date,
+    defaultMasterId: backendOrder.default_master ? String(backendOrder.default_master) : '',
+    createdAt: backendOrder.created_at,
 
-    operations: apiData.operations.map(op => {
-        const startObj = parseDateTimeString(op.planned_start);
-        const endObj = parseDateTimeString(op.planned_end);
-
-        if (startObj.time === '00:00') startObj.time = '08:00';
-        if (endObj.time === '00:00') endObj.time = '20:00';
-
-        return {
-            id: op.id,
-            name: op.name,
-            description: op.description || '',
-
-            startDate: startObj.date,
-            startTime: startObj.time,
-            endDate: endObj.date,
-            endTime: endObj.time,
-
-            actualStart: op.actual_start,
-            actualEnd: op.actual_end,
-
-            durationMinutes: calculateDurationMinutes(
-                createDateTime(startObj.date, startObj.time),
-                createDateTime(endObj.date, endObj.time)
-            ),
-
-            workshopId: op.assembly_shop ? String(op.assembly_shop) : '',
-            performerIds: op.executors?.map(String) || [],
-            masterId: op.master ? String(op.master) : '',
-
-            previousOperationId: op.previous_operation
-                ? String(op.previous_operation)
-                : '',
-        };
-    })
+    operations: backendOrder.operations.map((op) => 
+        mapOperationForGantt(op, backendOrder.name, backendOrder.id)
+    )
 });
 
 // Подготовка данных операции для отправки на бэкенд
@@ -94,27 +87,19 @@ export const mapBackendListToFrontend = (backendOrder) => ({
     title: backendOrder.name,
     deadline: backendOrder.deadline ? backendOrder.deadline.split(/[ T]/)[0] : '',
     defaultMasterId: backendOrder.default_master,
-    operations: backendOrder.operations.map((op) => ({
-        id: op.id,
-        name: op.name,
-        // Для Ганта берем полную строку даты-времени
-        originalPlannedStart: op.planned_start,
-        originalPlannedEnd: op.planned_end,
-        
-        startDate: op.actual_start || op.planned_start,
-        endDate: op.actual_end || op.planned_end,
-        
-        predictStart: op.predict_start,
-        predictEnd: op.predict_end,
-        actualStart: op.actual_start,
-        actualEnd: op.actual_end,
-        
-        completed: op.status === "completed",
-        inProgress: op.status === "in_progress",
-        orderTitle: backendOrder.name,
-        orderId: backendOrder.id, 
-        workshopName: op.assembly_shop_name || '-',
-        masterName: op.master_name || '-',
-        masterId: op.master, 
-    })),
+    operations: backendOrder.operations.map((op) => 
+        mapOperationForGantt(op, backendOrder.name, backendOrder.id)
+    ),
+});
+
+export const mapExecutorAggregationToFrontend = (executor) => ({
+    id: executor.id,
+    title: executor.full_name, // Используем имя как заголовок группы
+    totalTasks: executor.total_tasks,
+    activeTasks: executor.active_tasks_count,
+    
+    // Мапим задачи в формат операций Ганта
+    operations: executor.tasks.map(task => 
+        mapOperationForGantt(task, task.order_name, task.order_id)
+    )
 });

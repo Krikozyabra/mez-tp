@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import styles from "./MainPage.module.css";
 import SearchBar from "../components/SearchBar";
 import OrderList from "../components/OrderList";
+import ExecutorList from "../components/ExecutorList";
 import Modal from "../components/Modal";
 import LoginModal from "../components/LoginModal";
 import OrderFormPage from "./OrderFormPage";
@@ -14,12 +15,14 @@ import { api } from "../api/api";
 import {
   mapBackendDetailToForm,
   mapBackendListToFrontend,
+  mapExecutorAggregationToFrontend
 } from "../utils/mappers";
 import { formatDateInputValue } from "../utils/dateUtils";
 
 const MainPage = ({ onCreateOrder }) => {
   const { user, role, isAuthenticated, login, logout, hasPermission } = useAuth();
 
+  // --- Состояния данных ---
   const [orders, setOrders] = useState([]);
   const [mastersList, setMastersList] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -34,6 +37,10 @@ const MainPage = ({ onCreateOrder }) => {
   const [isFetchingDetails, setIsFetchingDetails] = useState(false);
   const [focusOperationId, setFocusOperationId] = useState(null);
   const [showCompleted, setShowCompleted] = useState(true);
+
+  const [viewMode, setViewMode] = useState('orders'); // 'orders' | 'executors'
+  const [executorsAggregated, setExecutorsAggregated] = useState([]);
+  const [expandedExecutorIds, setExpandedExecutorIds] = useState(new Set());
   
   // Состояния для МОДАЛЬНЫХ ОКОН ДЕЙСТВИЙ (Старт/Стоп)
   const [opToStart, setOpToStart] = useState(null);
@@ -68,7 +75,7 @@ const MainPage = ({ onCreateOrder }) => {
     return saved || formatDateInputValue(new Date());
   });
 
-  // ... (Вспомогательные функции API и хуки без изменений) ...
+  // ... (Вспомогательные функции API и хуки) ...
   const updateUrlParams = (orderId) => {
     const url = new URL(window.location);
     if (orderId) url.searchParams.set("editOrderId", orderId);
@@ -116,6 +123,44 @@ const MainPage = ({ onCreateOrder }) => {
       setIsLoading(false);
     }
   }, []);
+
+  // === ЗАГРУЗКА ИСПОЛНИТЕЛЕЙ ===
+  const fetchExecutorsAggregation = useCallback(async () => {
+      setIsLoading(true);
+      try {
+          // activeOnly = !showCompleted (если галочка "Показывать выполненные" снята -> activeOnly=true)
+          const activeOnly = !showCompleted; 
+          const data = await api.refs.getAggregatedExecutors(activeOnly);
+          
+          if (data && (Array.isArray(data) || data.results)) { 
+             const list = data.results || data;
+             const mapped = list.map(mapExecutorAggregationToFrontend);
+             setExecutorsAggregated(mapped);
+          }
+      } catch (error) {
+          console.error("Ошибка загрузки исполнителей:", error);
+      } finally {
+          setIsLoading(false);
+      }
+  }, [showCompleted]);
+
+  useEffect(() => {
+      if (isAuthenticated) {
+          if (viewMode === 'orders') {
+              fetchOrders();
+          } else {
+              fetchExecutorsAggregation();
+          }
+      }
+  }, [isAuthenticated, viewMode, showCompleted, fetchOrders, fetchExecutorsAggregation]);
+
+  const handleToggleExecutor = useCallback((id) => {
+    setExpandedExecutorIds((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }, []);
   
   useEffect(() => {
       if (isAuthenticated) {
@@ -126,9 +171,8 @@ const MainPage = ({ onCreateOrder }) => {
             } catch (error) { console.error(error); }
           };
           loadMasters();
-          fetchOrders();
       }
-  }, [isAuthenticated, fetchOrders]);
+  }, [isAuthenticated]);
 
 
   const timelineStartByOrder = useMemo(() => {
@@ -148,6 +192,49 @@ const MainPage = ({ onCreateOrder }) => {
       return { ...order, operations: visibleOperations };
     }).filter(order => showCompleted ? true : order.operations.length > 0);
   }, [orders, searchTerm, showCompleted]);
+
+  const filteredExecutors = useMemo(() => {
+      if (!searchTerm) {
+          // Если поиска нет, просто фильтруем по "показывать выполненные"
+          // В executorsAggregated операции уже отфильтрованы по activeOnly на бэке, если мы так настроили,
+          // но на фронте мы переключаем галочку "showCompleted" и делаем новый запрос.
+          // Поэтому здесь просто возвращаем список как есть.
+          return executorsAggregated;
+      }
+
+      const lowerTerm = searchTerm.toLowerCase();
+
+      return executorsAggregated
+          .map((executor) => {
+              // 1. Проверяем имя исполнителя
+              const nameMatch = executor.title.toLowerCase().includes(lowerTerm);
+
+              // 2. Фильтруем задачи (по названию задачи или названию заказа)
+              const matchingOps = executor.operations.filter((op) => 
+                  op.name.toLowerCase().includes(lowerTerm) || 
+                  (op.orderTitle && op.orderTitle.toLowerCase().includes(lowerTerm))
+              );
+
+              // ЛОГИКА ОТОБРАЖЕНИЯ:
+              // Если имя исполнителя совпадает — показываем исполнителя и ВСЕ его задачи.
+              // Если имя не совпадает — показываем исполнителя ТОЛЬКО с найденными задачами.
+              if (nameMatch) {
+                  return executor;
+              } else if (matchingOps.length > 0) {
+                  return {
+                      ...executor,
+                      operations: matchingOps,
+                      // Обновляем счетчики для UI (опционально, но полезно)
+                      activeTasks: matchingOps.filter(op => !op.completed).length,
+                      totalTasks: matchingOps.length
+                  };
+              }
+              
+              // Если ничего не совпало, убираем исполнителя из списка
+              return null;
+          })
+          .filter(Boolean);
+  }, [executorsAggregated, searchTerm]);
 
    const fetchTimelineStart = useCallback(async () => {
     if (localStorage.getItem("ganttTimelineStart")) {
@@ -189,7 +276,9 @@ const MainPage = ({ onCreateOrder }) => {
   const handleConfirmStart = async (opId, workshopId, executorIds) => {
       try {
           await api.operations.start(opId, workshopId, executorIds);
-          await fetchOrders();
+          // Обновляем данные в зависимости от режима просмотра
+          if (viewMode === 'orders') await fetchOrders();
+          else await fetchExecutorsAggregation();
       } catch (e) { alert("Ошибка старта: " + e.message); }
       finally { setOpToStart(null); }
   };
@@ -198,7 +287,9 @@ const MainPage = ({ onCreateOrder }) => {
       if (!opToFinish) return;
       try {
           await api.operations.end(opToFinish.id);
-          await fetchOrders();
+          // Обновляем данные в зависимости от режима просмотра
+          if (viewMode === 'orders') await fetchOrders();
+          else await fetchExecutorsAggregation();
       } catch (e) { alert("Ошибка завершения"); }
       finally { setOpToFinish(null); }
   };
@@ -222,7 +313,10 @@ const MainPage = ({ onCreateOrder }) => {
     setOrderForEdit(null);
     setFocusOperationId(null);
     updateUrlParams(null);
-    await fetchOrders(); 
+    
+    if (viewMode === 'orders') await fetchOrders();
+    else await fetchExecutorsAggregation();
+    
     await fetchTimelineStart();
   };
 
@@ -235,7 +329,9 @@ const MainPage = ({ onCreateOrder }) => {
     };
 
   const handleSaveOrderForm = async () => {
-    await fetchOrders();
+    if (viewMode === 'orders') await fetchOrders();
+    else await fetchExecutorsAggregation();
+    
     await fetchTimelineStart();
     handleCloseOrderForm();
   };
@@ -244,7 +340,8 @@ const MainPage = ({ onCreateOrder }) => {
     setIsOrderFormOpen(false);
     setOrderForEdit(null);
     updateUrlParams(null);
-    await fetchOrders();
+    if (viewMode === 'orders') await fetchOrders();
+    else await fetchExecutorsAggregation();
   };
 
   const handleToggleOrder = useCallback((id) => {
@@ -280,51 +377,67 @@ const MainPage = ({ onCreateOrder }) => {
             user={user}
           />
         </div>
+        
         <section className={styles.ordersArea}>
           <div className={styles.ordersCard}>
+            
+            {/* === ОБНОВЛЕННЫЙ ХЕДЕР ТАБЛИЦЫ === */}
             <div className={styles.ordersHeader}>
-              <div className={styles.ordersTitle}>
-                Заказы {isLoading && <span style={{fontSize: "14px", color: "#64748b"}}>(Загрузка...)</span>}
-                
-                {/* КНОПКИ ДЛЯ ТЕХНОЛОГА */}
-                {isTechnolog && (
-                    <>
-                        <button 
-                            className={styles.createButtonSmall} 
-                            onClick={handleCreateOrderClick}
-                            style={{marginLeft: '16px', padding: '6px 12px', fontSize: '14px', borderRadius: '8px'}}
-                        >
-                            + Новый
-                        </button>
-                        <button 
-                            className={styles.createButtonSmall} 
-                            onClick={() => setIsWorkshopModalOpen(true)}
-                            style={{marginLeft: '8px', padding: '6px 12px', fontSize: '14px', borderRadius: '8px', backgroundColor: '#3b82f6'}}
-                        >
-                            + Цех
-                        </button>
-                        <button 
-                            className={styles.createButtonSmall} 
-                            onClick={() => setIsExecutorModalOpen(true)}
-                            style={{marginLeft: '8px', padding: '6px 12px', fontSize: '14px', borderRadius: '8px', backgroundColor: '#8b5cf6'}} // Фиолетовый
-                        >
-                            + Исполнитель
-                        </button>
-                    </>
-                )}
-              </div>
               
-              <div className={styles.controlsGroup} style={{ display: "flex", gap: "20px", alignItems: "center" }}>
-                {/* ... (фильтры и дата) ... */}
-                <label className={styles.checkboxLabel} style={{display: "flex", alignItems: "center", gap: "8px", fontSize: "14px", cursor: "pointer"}}>
-                  <input type="checkbox" checked={showCompleted} onChange={(e) => setShowCompleted(e.target.checked)} style={{ width: "16px", height: "16px"}} />
+              {/* СТРОКА 1: Переключатель вида и Кнопки действий */}
+              <div className={styles.headerTopRow}>
+                
+                <div className={styles.headerLeftGroup}>
+                    {/* Переключатель */}
+                    <div className={styles.viewToggle}>
+                        <button 
+                            className={`${styles.toggleBtn} ${viewMode === 'orders' ? styles.toggleBtnActive : ''}`}
+                            onClick={() => setViewMode('orders')}
+                        >
+                            Заказы
+                        </button>
+                        <button 
+                            className={`${styles.toggleBtn} ${viewMode === 'executors' ? styles.toggleBtnActive : ''}`}
+                            onClick={() => setViewMode('executors')}
+                        >
+                            Исполнители
+                        </button>
+                    </div>
+
+                    {isLoading && <span style={{fontSize: "13px", color: "#94a3b8"}}>Загрузка...</span>}
+                </div>
+
+                <div className={styles.headerActionsGroup}>
+                    {/* Кнопки создания (только для технолога) */}
+                    {isTechnolog && (
+                        <>
+                            <button className={styles.createButtonSmall} onClick={handleCreateOrderClick}>
+                                + Заказ
+                            </button>
+                            <button className={`${styles.createButtonSmall} ${styles.btnBlue}`} onClick={() => setIsWorkshopModalOpen(true)}>
+                                + Цех
+                            </button>
+                            <button className={`${styles.createButtonSmall} ${styles.btnPurple}`} onClick={() => setIsExecutorModalOpen(true)}>
+                                + Исполнитель
+                            </button>
+                        </>
+                    )}
+                </div>
+              </div>
+
+              {/* СТРОКА 2: Фильтры и настройки */}
+              <div className={styles.headerBottomRow}>
+                {/* Чекбокс */}
+                <label className={styles.checkboxLabel}>
+                  <input type="checkbox" checked={showCompleted} onChange={(e) => setShowCompleted(e.target.checked)} />
                   Показывать выполненные
                 </label>
                 
-                <div className={styles.globalDateControl}>
+                {/* Масштаб */}
+                <div className={styles.controlItem}>
                    <label>Масштаб:</label>
                    <select 
-                      className={styles.globalDateInput} 
+                      className={styles.controlInput} 
                       value={ganttPeriod} 
                       onChange={handleGanttPeriodChange}
                    >
@@ -336,42 +449,61 @@ const MainPage = ({ onCreateOrder }) => {
                    </select>
                 </div>
 
-                <div className={styles.globalDateControl}>
+                {/* Дата начала */}
+                <div className={styles.controlItem}>
                   <label htmlFor="global-timeline-start">Начало:</label>
                   <input
                     id="global-timeline-start"
                     type="date"
-                    className={styles.globalDateInput}
+                    className={styles.controlInput}
                     value={commonTimelineStart}
                     onChange={handleDateChange}
                   />
                 </div>
               </div>
-            </div>
 
-            <OrderList
-              orders={filteredOrders}
-              expandedIds={expandedOrderIds}
-              canEdit={isTechnolog}
-              onToggleOrder={handleToggleOrder}
-              onSelectOperation={handleSelectOperation}
-              onEditOrder={(order) => openOrderForEdit(order.id)}
-              onEditOperation={handleEditOperationClick} 
-              activeOrderId={activeOrderId}
-              activeOperationId={activeOperationId}
-              timelineStartByOrder={timelineStartByOrder}
-              onTimelineStartChange={(_, date) => setCommonTimelineStart(date)}
-              daysRange={ganttPeriod} 
-              currentUser={user}
-              onInitiateStart={handleInitiateStart}
-              onInitiateFinish={handleInitiateFinish}
-            />
+            </div>
+            {/* === КОНЕЦ ХЕДЕРА === */}
+
+            {viewMode === 'orders' ? (
+                <OrderList
+                  orders={filteredOrders}
+                  expandedIds={expandedOrderIds}
+                  canEdit={isTechnolog}
+                  onToggleOrder={handleToggleOrder}
+                  onSelectOperation={handleSelectOperation}
+                  onEditOrder={(order) => openOrderForEdit(order.id)}
+                  onEditOperation={handleEditOperationClick} 
+                  activeOrderId={activeOrderId}
+                  activeOperationId={activeOperationId}
+                  timelineStartByOrder={timelineStartByOrder}
+                  onTimelineStartChange={(_, date) => setCommonTimelineStart(date)}
+                  daysRange={ganttPeriod} 
+                  currentUser={user}
+                  onInitiateStart={handleInitiateStart}
+                  onInitiateFinish={handleInitiateFinish}
+                />
+            ) : (
+                <ExecutorList 
+                    executors={filteredExecutors}
+                    expandedIds={expandedExecutorIds}
+                    onToggleExecutor={handleToggleExecutor}
+                    commonTimelineStart={commonTimelineStart}
+                    daysRange={ganttPeriod}
+                    onEditOperation={handleEditOperationClick} 
+                    currentUser={user}
+                    onInitiateStart={handleInitiateStart}
+                    onInitiateFinish={handleInitiateFinish}
+                />
+            )}
           </div>
         </section>
       </div>
 
       {isLoginModalOpen && <LoginModal onClose={() => setIsLoginModalOpen(false)} onLogin={login} />}
       
+      {/* ... (Модалки: CreateOrder, Workshop, Executor, Start, Finish) - ОСТАЮТСЯ БЕЗ ИЗМЕНЕНИЙ ... */}
+      {/* (Код модалок ниже просто копируется из старой версии, он не менялся) */}
       {isCreateModalOpen && (
         <Modal 
             title="Новый заказ" 
@@ -379,7 +511,6 @@ const MainPage = ({ onCreateOrder }) => {
             onSubmit={handleConfirmCreateOrder}
             isSubmitDisabled={!newOrderData.title.trim() || !newOrderData.deadline}
         >
-             {/* ... поля формы ... */}
              <div className={styles.formGroup}>
                 <label className={styles.formLabel}>Название заказа <span style={{color: 'red'}}>*</span></label>
                 <input className={styles.formInput} value={newOrderData.title} onChange={(e) => setNewOrderData({...newOrderData, title: e.target.value})} autoFocus />
@@ -401,23 +532,9 @@ const MainPage = ({ onCreateOrder }) => {
              </div>
         </Modal>
       )}
-      {isWorkshopModalOpen && (
-        <AddWorkshopModal 
-            onClose={() => setIsWorkshopModalOpen(false)} 
-        />
-      )}
-
-      {isExecutorModalOpen && (
-        <AddExecutorModal onClose={() => setIsExecutorModalOpen(false)} />
-      )}
-
-      <StartOperationModal 
-          isOpen={!!opToStart}
-          operation={opToStart || {}}
-          onClose={() => setOpToStart(null)}
-          onConfirm={handleConfirmStart}
-      />
-
+      {isWorkshopModalOpen && <AddWorkshopModal onClose={() => setIsWorkshopModalOpen(false)} />}
+      {isExecutorModalOpen && <AddExecutorModal onClose={() => setIsExecutorModalOpen(false)} />}
+      <StartOperationModal isOpen={!!opToStart} operation={opToStart || {}} onClose={() => setOpToStart(null)} onConfirm={handleConfirmStart} />
       {opToFinish && createPortal(
           <div style={{position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000}} onClick={() => setOpToFinish(null)}>
             <div style={{background: 'white', padding: '24px', borderRadius: '12px', width: '400px'}} onClick={e => e.stopPropagation()}>

@@ -168,6 +168,8 @@ export const api = {
             method: 'POST',
             body: JSON.stringify(data)
         }),
+        getAggregatedExecutors: (activeOnly = false) => 
+            authFetch(`/executors/aggregated/?active_only=${activeOnly}`),
         getExecutorsByWorkshop: (workshopId) => authFetch(`/executors/by-workshop/${workshopId}/`),
         getMasters: () => authFetch(`/masters/`),
     }

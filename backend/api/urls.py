@@ -14,7 +14,12 @@ from .views.operation_views import (
 )
 from .views.log_views import TehLogViewSet
 from .views.workshop_views import AssemblyShopAPIList, AssemblyShopAPIUpdate
-from .views.executor_views import ExecutorAPIList, ExecutorAPIUpdate, ExecutorAPIListByWorkshop
+from .views.executor_views import (
+    ExecutorAPIList, 
+    ExecutorAPIUpdate, 
+    ExecutorAPIListByWorkshop,
+    ExecutorTasksAggregationView
+)
 from .views.user_views import MasterListAPIView, CurrentUserView
 
 router = DefaultRouter()
@@ -51,6 +56,7 @@ urlpatterns = [
     path('executors/', ExecutorAPIList.as_view()),
     path('executors/<int:pk>/', ExecutorAPIUpdate.as_view()),
     path('executors/by-workshop/<int:workshop_pk>/', ExecutorAPIListByWorkshop.as_view()),
+    path('executors/aggregated/', ExecutorTasksAggregationView.as_view()),
 
     # Masters
     path('masters/', MasterListAPIView.as_view()),

@@ -80,7 +80,7 @@ class Operation(models.Model):
         blank=True, 
         verbose_name="Сборочный цех"
     )
-    executors = models.ManyToManyField(Executor, verbose_name="Исполнители", blank=True)
+    executors = models.ManyToManyField(Executor, verbose_name="Исполнители", related_name="operation_set", blank=True)
 
     master = models.ForeignKey(
         CustomUser, 
