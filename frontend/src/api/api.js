@@ -159,7 +159,17 @@ export const api = {
     },
     refs: {
         getWorkshops: () => authFetch(`/workshops/`),
+        createWorkshop: (name) => authFetch(`/workshops/`, {
+            method: 'POST',
+            body: JSON.stringify({ name })
+        }),
         getExecutors: () => authFetch(`/executors/`),
+        createExecutor: (data) => authFetch(`/executors/`, {
+            method: 'POST',
+            body: JSON.stringify(data)
+        }),
+        getAggregatedExecutors: (activeOnly = false) => 
+            authFetch(`/executors/aggregated/?active_only=${activeOnly}`),
         getExecutorsByWorkshop: (workshopId) => authFetch(`/executors/by-workshop/${workshopId}/`),
         getMasters: () => authFetch(`/masters/`),
     }

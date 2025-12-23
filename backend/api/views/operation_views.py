@@ -76,7 +76,7 @@ class OperationDetailUpdateDeleteAPIView(generics.RetrieveUpdateDestroyAPIView):
         instance = serializer.save()
         
         if instance.next_operations.exists():
-            recalculate_chain(instance)
+            recalculate_predict_chain(instance)
     
 class OperationAPIGetByOrder(generics.ListAPIView):
     serializer_class = OperationSerializer
@@ -136,7 +136,7 @@ class OperationStartAPIView(views.APIView):
                 
                 # Исправлено: next_operations.exists() и убран is_ended
                 if operation.next_operations.exists():
-                    recalculate_chain(operation)
+                    recalculate_predict_chain(operation)
             
             if request.user.role == 'master':
                 log = TehLog()
@@ -177,7 +177,7 @@ class OperationEndAPIView(views.APIView):
             operation.save()
             
             if operation.next_operations.exists():
-                recalculate_chain(operation)
+                recalculate_predict_chain(operation)
                 
             if request.user.role == 'master':
                 log = TehLog()
