@@ -1,12 +1,13 @@
 import { useMemo, useState, useEffect, useCallback } from "react";
-import { createPortal } from "react-dom"; // Для модалки завершения
+import { createPortal } from "react-dom";
 import styles from "./MainPage.module.css";
 import SearchBar from "../components/SearchBar";
 import OrderList from "../components/OrderList";
 import Modal from "../components/Modal";
 import LoginModal from "../components/LoginModal";
 import OrderFormPage from "./OrderFormPage";
-import StartOperationModal from "../components/StartOperationModal"; // Перенесли сюда
+import StartOperationModal from "../components/StartOperationModal";
+import AddWorkshopModal from "../components/AddWorkshopModal";
 import { useAuth } from "../context/AuthContext";
 import { api } from "../api/api";
 import {
@@ -18,7 +19,6 @@ import { formatDateInputValue } from "../utils/dateUtils";
 const MainPage = ({ onCreateOrder }) => {
   const { user, role, isAuthenticated, login, logout, hasPermission } = useAuth();
 
-  // --- Состояния данных ---
   const [orders, setOrders] = useState([]);
   const [mastersList, setMastersList] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -27,6 +27,7 @@ const MainPage = ({ onCreateOrder }) => {
 
   // --- Состояния UI ---
   const [isOrderFormOpen, setIsOrderFormOpen] = useState(false);
+  const [isWorkshopModalOpen, setIsWorkshopModalOpen] = useState(false); // <--- Используем состояние
   const [orderForEdit, setOrderForEdit] = useState(null);
   const [isFetchingDetails, setIsFetchingDetails] = useState(false);
   const [focusOperationId, setFocusOperationId] = useState(null);
@@ -65,7 +66,7 @@ const MainPage = ({ onCreateOrder }) => {
     return saved || formatDateInputValue(new Date());
   });
 
-  // ... (updateUrlParams, openOrderForEdit, fetchOrders, useEffects - БЕЗ ИЗМЕНЕНИЙ) ...
+  // ... (Вспомогательные функции API и хуки без изменений) ...
   const updateUrlParams = (orderId) => {
     const url = new URL(window.location);
     if (orderId) url.searchParams.set("editOrderId", orderId);
@@ -115,13 +116,13 @@ const MainPage = ({ onCreateOrder }) => {
   }, []);
   
   useEffect(() => {
-      const loadMasters = async () => {
-        try {
-          const data = await api.refs.getMasters();
-          setMastersList(data?.results || []);
-        } catch (error) { console.error(error); }
-      };
       if (isAuthenticated) {
+          const loadMasters = async () => {
+            try {
+              const data = await api.refs.getMasters();
+              setMastersList(data?.results || []);
+            } catch (error) { console.error(error); }
+          };
           loadMasters();
           fetchOrders();
       }
@@ -150,7 +151,6 @@ const MainPage = ({ onCreateOrder }) => {
     if (localStorage.getItem("ganttTimelineStart")) {
         return;
     }
-
     try {
         const data = await api.operations.getFirst();
         const dateValue = data?.actual_planned_start || data?.planned_start;
@@ -165,7 +165,7 @@ const MainPage = ({ onCreateOrder }) => {
 
   useEffect(() => { fetchTimelineStart(); }, [fetchTimelineStart]);
 
-  // --- Обработчики действий ---
+  // --- Обработчики ---
   const handleEditOperationClick = useCallback((operation) => {
       if (operation.orderId) openOrderForEdit(operation.orderId, operation.id);
   }, [openOrderForEdit]);
@@ -181,14 +181,8 @@ const MainPage = ({ onCreateOrder }) => {
     setIsCreateModalOpen(true);
   };
   
-  // --- ЛОГИКА СТАРТА / СТОПА ---
-  const handleInitiateStart = (operation) => {
-      setOpToStart(operation);
-  };
-
-  const handleInitiateFinish = (operation) => {
-      setOpToFinish(operation);
-  };
+  const handleInitiateStart = (operation) => setOpToStart(operation);
+  const handleInitiateFinish = (operation) => setOpToFinish(operation);
 
   const handleConfirmStart = async (opId, workshopId, executorIds) => {
       try {
@@ -221,16 +215,12 @@ const MainPage = ({ onCreateOrder }) => {
     } catch (error) { alert("Не удалось создать заказ: " + error.message); }
   };
 
-  // Функция закрытия формы
-  const handleCloseOrderForm = async () => { // Делаем async
+  const handleCloseOrderForm = async () => {
     setIsOrderFormOpen(false);
     setOrderForEdit(null);
     setFocusOperationId(null);
     updateUrlParams(null);
-    
-    // Обновляем список, чтобы увидеть изменения (например, новые мастера)
     await fetchOrders(); 
-    // Также можно обновить линию времени, если даты поменялись
     await fetchTimelineStart();
   };
 
@@ -288,27 +278,35 @@ const MainPage = ({ onCreateOrder }) => {
             user={user}
           />
         </div>
-        
-        {/* ЛЕВАЯ КОЛОНКА УДАЛЕНА, КНОПКА СОЗДАНИЯ ПЕРЕМЕЩЕНА В ШАПКУ ТАБЛИЦЫ ИЛИ ОСТАВЛЕНА СЛЕВА В БЛОКЕ */}
-        
         <section className={styles.ordersArea}>
           <div className={styles.ordersCard}>
             <div className={styles.ordersHeader}>
               <div className={styles.ordersTitle}>
                 Заказы {isLoading && <span style={{fontSize: "14px", color: "#64748b"}}>(Загрузка...)</span>}
-                {/* Кнопка создания заказа теперь здесь, если Технолог */}
+                
+                {/* КНОПКИ ДЛЯ ТЕХНОЛОГА */}
                 {isTechnolog && (
-                    <button 
-                        className={styles.createButtonSmall} 
-                        onClick={handleCreateOrderClick}
-                        style={{marginLeft: '16px', padding: '6px 12px', fontSize: '14px', borderRadius: '8px'}}
-                    >
-                        + Новый
-                    </button>
+                    <>
+                        <button 
+                            className={styles.createButtonSmall} 
+                            onClick={handleCreateOrderClick}
+                            style={{marginLeft: '16px', padding: '6px 12px', fontSize: '14px', borderRadius: '8px'}}
+                        >
+                            + Новый
+                        </button>
+                        <button 
+                            className={styles.createButtonSmall} 
+                            onClick={() => setIsWorkshopModalOpen(true)} // Открытие модалки цехов
+                            style={{marginLeft: '8px', padding: '6px 12px', fontSize: '14px', borderRadius: '8px', backgroundColor: '#3b82f6'}}
+                        >
+                            + Цех
+                        </button>
+                    </>
                 )}
               </div>
               
               <div className={styles.controlsGroup} style={{ display: "flex", gap: "20px", alignItems: "center" }}>
+                {/* ... (фильтры и дата) ... */}
                 <label className={styles.checkboxLabel} style={{display: "flex", alignItems: "center", gap: "8px", fontSize: "14px", cursor: "pointer"}}>
                   <input type="checkbox" checked={showCompleted} onChange={(e) => setShowCompleted(e.target.checked)} style={{ width: "16px", height: "16px"}} />
                   Показывать выполненные
@@ -355,8 +353,6 @@ const MainPage = ({ onCreateOrder }) => {
               timelineStartByOrder={timelineStartByOrder}
               onTimelineStartChange={(_, date) => setCommonTimelineStart(date)}
               daysRange={ganttPeriod} 
-
-              // === ПЕРЕДАЕМ ВНИЗ ===
               currentUser={user}
               onInitiateStart={handleInitiateStart}
               onInitiateFinish={handleInitiateFinish}
@@ -367,7 +363,6 @@ const MainPage = ({ onCreateOrder }) => {
 
       {isLoginModalOpen && <LoginModal onClose={() => setIsLoginModalOpen(false)} onLogin={login} />}
       
-      {/* Модалка создания заказа */}
       {isCreateModalOpen && (
         <Modal 
             title="Новый заказ" 
@@ -375,7 +370,7 @@ const MainPage = ({ onCreateOrder }) => {
             onSubmit={handleConfirmCreateOrder}
             isSubmitDisabled={!newOrderData.title.trim() || !newOrderData.deadline}
         >
-             {/* ... (поля формы те же) ... */}
+             {/* ... поля формы ... */}
              <div className={styles.formGroup}>
                 <label className={styles.formLabel}>Название заказа <span style={{color: 'red'}}>*</span></label>
                 <input className={styles.formInput} value={newOrderData.title} onChange={(e) => setNewOrderData({...newOrderData, title: e.target.value})} autoFocus />
@@ -397,8 +392,12 @@ const MainPage = ({ onCreateOrder }) => {
              </div>
         </Modal>
       )}
+      {isWorkshopModalOpen && (
+        <AddWorkshopModal 
+            onClose={() => setIsWorkshopModalOpen(false)} 
+        />
+      )}
 
-      {/* Модалка СТАРТА операции */}
       <StartOperationModal 
           isOpen={!!opToStart}
           operation={opToStart || {}}
@@ -406,7 +405,6 @@ const MainPage = ({ onCreateOrder }) => {
           onConfirm={handleConfirmStart}
       />
 
-      {/* Модалка ЗАВЕРШЕНИЯ операции */}
       {opToFinish && createPortal(
           <div style={{position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000}} onClick={() => setOpToFinish(null)}>
             <div style={{background: 'white', padding: '24px', borderRadius: '12px', width: '400px'}} onClick={e => e.stopPropagation()}>
