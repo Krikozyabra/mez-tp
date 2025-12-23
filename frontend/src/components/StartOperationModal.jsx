@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { api } from '../api/api';
-import styles from './Modal/Modal.module.css'; // Используем стили обычного Modal
+import styles from './Modal/Modal.module.css';
 
 const StartOperationModal = ({ isOpen, operation, onClose, onConfirm }) => {
     const [workshops, setWorkshops] = useState([]);
@@ -8,6 +8,10 @@ const StartOperationModal = ({ isOpen, operation, onClose, onConfirm }) => {
     
     const [selectedWorkshop, setSelectedWorkshop] = useState('');
     const [selectedExecutors, setSelectedExecutors] = useState([]);
+    
+    // Новое состояние для поиска
+    const [searchTerm, setSearchTerm] = useState('');
+    
     const [isLoadingRefs, setIsLoadingRefs] = useState(false);
 
     // Загрузка цехов при открытии
@@ -28,6 +32,7 @@ const StartOperationModal = ({ isOpen, operation, onClose, onConfirm }) => {
             // Сброс состояния
             setSelectedWorkshop('');
             setSelectedExecutors([]);
+            setSearchTerm(''); // Сбрасываем поиск при открытии
         }
     }, [isOpen]);
 
@@ -38,7 +43,8 @@ const StartOperationModal = ({ isOpen, operation, onClose, onConfirm }) => {
                 try {
                     const data = await api.refs.getExecutorsByWorkshop(selectedWorkshop);
                     setExecutors(data || []);
-                    setSelectedExecutors([]); // Сброс исполнителей при смене цеха
+                    setSelectedExecutors([]); 
+                    setSearchTerm(''); // Сбрасываем поиск при смене цеха
                 } catch (e) {
                     console.error(e);
                 }
@@ -62,6 +68,11 @@ const StartOperationModal = ({ isOpen, operation, onClose, onConfirm }) => {
         if (!selectedWorkshop || selectedExecutors.length === 0) return;
         onConfirm(operation.id, selectedWorkshop, selectedExecutors);
     };
+
+    // Фильтрация исполнителей
+    const filteredExecutors = executors.filter(ex => 
+        ex.full_name.toLowerCase().includes(searchTerm.toLowerCase())
+    );
 
     if (!isOpen) return null;
 
@@ -92,6 +103,17 @@ const StartOperationModal = ({ isOpen, operation, onClose, onConfirm }) => {
                     {selectedWorkshop && (
                         <div className={styles.formGroup}>
                             <label className={styles.label}>Выберите исполнителей</label>
+                            
+                            {/* Поле поиска */}
+                            <input 
+                                type="text"
+                                className={styles.input} // Используем стандартный класс input из стилей модалки
+                                placeholder="Поиск по фамилии..."
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                style={{ marginBottom: '8px' }}
+                            />
+
                             <div style={{ 
                                 maxHeight: '150px', 
                                 overflowY: 'auto', 
@@ -99,21 +121,31 @@ const StartOperationModal = ({ isOpen, operation, onClose, onConfirm }) => {
                                 borderRadius: '12px',
                                 padding: '8px' 
                             }}>
-                                {executors.length === 0 ? (
-                                    <div style={{color: '#94a3b8', fontSize: '13px'}}>Нет исполнителей</div>
+                                {filteredExecutors.length === 0 ? (
+                                    <div style={{color: '#94a3b8', fontSize: '13px', textAlign: 'center', padding: '10px'}}>
+                                        {executors.length === 0 ? 'Нет исполнителей в цехе' : 'Ничего не найдено'}
+                                    </div>
                                 ) : (
-                                    executors.map(ex => (
-                                        <label key={ex.id} style={{display: 'flex', gap: '8px', padding: '4px', fontSize: '14px', cursor: 'pointer'}}>
+                                    filteredExecutors.map(ex => (
+                                        <label key={ex.id} style={{display: 'flex', gap: '8px', padding: '4px', fontSize: '14px', cursor: 'pointer', alignItems: 'center'}}>
                                             <input 
                                                 type="checkbox" 
                                                 checked={selectedExecutors.includes(String(ex.id))}
                                                 onChange={() => handleToggleExecutor(ex.id)}
+                                                style={{ cursor: 'pointer' }}
                                             />
                                             {ex.full_name}
                                         </label>
                                     ))
                                 )}
                             </div>
+                            
+                            {/* Отображение количества выбранных, если список отфильтрован */}
+                            {searchTerm && selectedExecutors.length > 0 && (
+                                <div style={{fontSize: '12px', color: '#64748b', marginTop: '4px'}}>
+                                    Выбрано всего: {selectedExecutors.length}
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>

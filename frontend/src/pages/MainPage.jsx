@@ -28,6 +28,7 @@ const MainPage = ({ onCreateOrder }) => {
   const [isLoading, setIsLoading] = useState(true);
 
   const isTechnolog = hasPermission(["technolog"]);
+  const isMaster = role === 'master';
 
   // --- Состояния UI ---
   const [isOrderFormOpen, setIsOrderFormOpen] = useState(false);
@@ -36,6 +37,9 @@ const MainPage = ({ onCreateOrder }) => {
   const [orderForEdit, setOrderForEdit] = useState(null);
   const [isFetchingDetails, setIsFetchingDetails] = useState(false);
   const [focusOperationId, setFocusOperationId] = useState(null);
+  
+  // Фильтры
+  const [showMyOnly, setShowMyOnly] = useState(false);
   const [showCompleted, setShowCompleted] = useState(true);
 
   const [viewMode, setViewMode] = useState('orders'); // 'orders' | 'executors'
@@ -128,8 +132,9 @@ const MainPage = ({ onCreateOrder }) => {
   const fetchExecutorsAggregation = useCallback(async () => {
       setIsLoading(true);
       try {
-          // activeOnly = !showCompleted (если галочка "Показывать выполненные" снята -> activeOnly=true)
           const activeOnly = !showCompleted; 
+          
+          // Передайте аргумент в функцию
           const data = await api.refs.getAggregatedExecutors(activeOnly);
           
           if (data && (Array.isArray(data) || data.results)) { 
@@ -186,55 +191,56 @@ const MainPage = ({ onCreateOrder }) => {
       order.title.toLowerCase().includes(searchTerm.toLowerCase())
     );
     return matchedOrders.map((order) => {
-      const visibleOperations = showCompleted
-        ? order.operations
-        : order.operations.filter((op) => !op.completed);
+      const visibleOperations = order.operations.filter((op) => {
+          // 1. Фильтр по выполненным
+          const statusMatch = showCompleted ? true : !op.completed;
+          
+          // 2. Фильтр по мастеру (только если активен чекбокс и роль мастера)
+          const masterMatch = (!isMaster || !showMyOnly) ? true : String(op.masterId) === String(user?.id);
+
+          return statusMatch && masterMatch;
+      });
+
       return { ...order, operations: visibleOperations };
-    }).filter(order => showCompleted ? true : order.operations.length > 0);
-  }, [orders, searchTerm, showCompleted]);
+    }).filter(order => {
+        // Показываем заказ, если в нем остались операции, подходящие под фильтры
+        // Либо если фильтры "мягкие" (показывать всё), то показываем и пустые заказы (опционально)
+        // Здесь логика: если операции есть - показываем.
+        return order.operations.length > 0;
+    });
+  }, [orders, searchTerm, showCompleted, showMyOnly, isMaster, user]);
 
   const filteredExecutors = useMemo(() => {
-      if (!searchTerm) {
-          // Если поиска нет, просто фильтруем по "показывать выполненные"
-          // В executorsAggregated операции уже отфильтрованы по activeOnly на бэке, если мы так настроили,
-          // но на фронте мы переключаем галочку "showCompleted" и делаем новый запрос.
-          // Поэтому здесь просто возвращаем список как есть.
-          return executorsAggregated;
-      }
-
       const lowerTerm = searchTerm.toLowerCase();
 
-      return executorsAggregated
-          .map((executor) => {
-              // 1. Проверяем имя исполнителя
-              const nameMatch = executor.title.toLowerCase().includes(lowerTerm);
+      return executorsAggregated.map((executor) => {
+          const isExecutorNameMatch = executor.title.toLowerCase().includes(lowerTerm);
 
-              // 2. Фильтруем задачи (по названию задачи или названию заказа)
-              const matchingOps = executor.operations.filter((op) => 
-                  op.name.toLowerCase().includes(lowerTerm) || 
-                  (op.orderTitle && op.orderTitle.toLowerCase().includes(lowerTerm))
-              );
+          const visibleOperations = executor.operations.filter((op) => {
+              // А) Статус
+              const isStatusVisible = showCompleted ? true : !op.completed;
 
-              // ЛОГИКА ОТОБРАЖЕНИЯ:
-              // Если имя исполнителя совпадает — показываем исполнителя и ВСЕ его задачи.
-              // Если имя не совпадает — показываем исполнителя ТОЛЬКО с найденными задачами.
-              if (nameMatch) {
-                  return executor;
-              } else if (matchingOps.length > 0) {
-                  return {
-                      ...executor,
-                      operations: matchingOps,
-                      // Обновляем счетчики для UI (опционально, но полезно)
-                      activeTasks: matchingOps.filter(op => !op.completed).length,
-                      totalTasks: matchingOps.length
-                  };
-              }
-              
-              // Если ничего не совпало, убираем исполнителя из списка
-              return null;
-          })
-          .filter(Boolean);
-  }, [executorsAggregated, searchTerm]);
+              // Б) Поиск
+              const isSearchMatch = isExecutorNameMatch || 
+                                    op.name.toLowerCase().includes(lowerTerm) || 
+                                    (op.orderTitle && op.orderTitle.toLowerCase().includes(lowerTerm));
+                                    
+              // В) Мастер (Только мои)
+              const isMasterMatch = (!isMaster || !showMyOnly) ? true : String(op.masterId) === String(user?.id);
+
+              return isStatusVisible && isSearchMatch && isMasterMatch;
+          });
+
+          return {
+              ...executor,
+              operations: visibleOperations,
+              activeTasks: visibleOperations.filter(o => !o.completed).length,
+              totalTasks: visibleOperations.length
+          };
+      })
+      .filter((executor) => executor.operations.length > 0);
+
+  }, [executorsAggregated, searchTerm, showCompleted, showMyOnly, isMaster, user]);
 
    const fetchTimelineStart = useCallback(async () => {
     if (localStorage.getItem("ganttTimelineStart")) {
@@ -381,12 +387,11 @@ const MainPage = ({ onCreateOrder }) => {
         <section className={styles.ordersArea}>
           <div className={styles.ordersCard}>
             
-            {/* === ОБНОВЛЕННЫЙ ХЕДЕР ТАБЛИЦЫ === */}
+            {/* === ХЕДЕР ТАБЛИЦЫ === */}
             <div className={styles.ordersHeader}>
               
-              {/* СТРОКА 1: Переключатель вида и Кнопки действий */}
+              {/* ВЕРХНЯЯ СТРОКА */}
               <div className={styles.headerTopRow}>
-                
                 <div className={styles.headerLeftGroup}>
                     {/* Переключатель */}
                     <div className={styles.viewToggle}>
@@ -403,12 +408,10 @@ const MainPage = ({ onCreateOrder }) => {
                             Исполнители
                         </button>
                     </div>
-
-                    {isLoading && <span style={{fontSize: "13px", color: "#94a3b8"}}>Загрузка...</span>}
+                    {isLoading && <span style={{fontSize: "13px", color: "#94a3b8", marginLeft: '8px'}}>Загрузка...</span>}
                 </div>
 
                 <div className={styles.headerActionsGroup}>
-                    {/* Кнопки создания (только для технолога) */}
                     {isTechnolog && (
                         <>
                             <button className={styles.createButtonSmall} onClick={handleCreateOrderClick}>
@@ -427,13 +430,18 @@ const MainPage = ({ onCreateOrder }) => {
 
               {/* СТРОКА 2: Фильтры и настройки */}
               <div className={styles.headerBottomRow}>
-                {/* Чекбокс */}
                 <label className={styles.checkboxLabel}>
                   <input type="checkbox" checked={showCompleted} onChange={(e) => setShowCompleted(e.target.checked)} />
                   Показывать выполненные
                 </label>
+
+                {isMaster && (
+                    <label className={styles.checkboxLabel}>
+                        <input type="checkbox" checked={showMyOnly} onChange={(e) => setShowMyOnly(e.target.checked)} />
+                        Только мои
+                    </label>
+                )}
                 
-                {/* Масштаб */}
                 <div className={styles.controlItem}>
                    <label>Масштаб:</label>
                    <select 
@@ -449,7 +457,6 @@ const MainPage = ({ onCreateOrder }) => {
                    </select>
                 </div>
 
-                {/* Дата начала */}
                 <div className={styles.controlItem}>
                   <label htmlFor="global-timeline-start">Начало:</label>
                   <input
@@ -461,7 +468,6 @@ const MainPage = ({ onCreateOrder }) => {
                   />
                 </div>
               </div>
-
             </div>
             {/* === КОНЕЦ ХЕДЕРА === */}
 
