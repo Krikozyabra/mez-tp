@@ -164,6 +164,10 @@ export const api = {
             body: JSON.stringify({ name })
         }),
         getExecutors: () => authFetch(`/executors/`),
+        createExecutor: (data) => authFetch(`/executors/`, {
+            method: 'POST',
+            body: JSON.stringify(data)
+        }),
         getExecutorsByWorkshop: (workshopId) => authFetch(`/executors/by-workshop/${workshopId}/`),
         getMasters: () => authFetch(`/masters/`),
     }

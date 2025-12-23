@@ -8,6 +8,7 @@ import LoginModal from "../components/LoginModal";
 import OrderFormPage from "./OrderFormPage";
 import StartOperationModal from "../components/StartOperationModal";
 import AddWorkshopModal from "../components/AddWorkshopModal";
+import AddExecutorModal from "../components/AddExecutorModal";
 import { useAuth } from "../context/AuthContext";
 import { api } from "../api/api";
 import {
@@ -27,7 +28,8 @@ const MainPage = ({ onCreateOrder }) => {
 
   // --- Состояния UI ---
   const [isOrderFormOpen, setIsOrderFormOpen] = useState(false);
-  const [isWorkshopModalOpen, setIsWorkshopModalOpen] = useState(false); // <--- Используем состояние
+  const [isWorkshopModalOpen, setIsWorkshopModalOpen] = useState(false);
+  const [isExecutorModalOpen, setIsExecutorModalOpen] = useState(false);
   const [orderForEdit, setOrderForEdit] = useState(null);
   const [isFetchingDetails, setIsFetchingDetails] = useState(false);
   const [focusOperationId, setFocusOperationId] = useState(null);
@@ -296,10 +298,17 @@ const MainPage = ({ onCreateOrder }) => {
                         </button>
                         <button 
                             className={styles.createButtonSmall} 
-                            onClick={() => setIsWorkshopModalOpen(true)} // Открытие модалки цехов
+                            onClick={() => setIsWorkshopModalOpen(true)}
                             style={{marginLeft: '8px', padding: '6px 12px', fontSize: '14px', borderRadius: '8px', backgroundColor: '#3b82f6'}}
                         >
                             + Цех
+                        </button>
+                        <button 
+                            className={styles.createButtonSmall} 
+                            onClick={() => setIsExecutorModalOpen(true)}
+                            style={{marginLeft: '8px', padding: '6px 12px', fontSize: '14px', borderRadius: '8px', backgroundColor: '#8b5cf6'}} // Фиолетовый
+                        >
+                            + Исполнитель
                         </button>
                     </>
                 )}
@@ -396,6 +405,10 @@ const MainPage = ({ onCreateOrder }) => {
         <AddWorkshopModal 
             onClose={() => setIsWorkshopModalOpen(false)} 
         />
+      )}
+
+      {isExecutorModalOpen && (
+        <AddExecutorModal onClose={() => setIsExecutorModalOpen(false)} />
       )}
 
       <StartOperationModal 
